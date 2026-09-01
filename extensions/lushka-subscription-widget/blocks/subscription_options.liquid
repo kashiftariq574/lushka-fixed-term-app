@@ -1,0 +1,209 @@
+{% if product != blank %}
+  {% assign current_variant = product.selected_or_first_available_variant %}
+  {% assign allocation = current_variant.selling_plan_allocations | first %}
+
+  {% if allocation != blank %}
+    {% assign plan = allocation.selling_plan %}
+    {% assign adjustment = plan.price_adjustments | first %}
+
+    <div
+      id="lushka-subscription-{{ block.id }}"
+      class="lushka-subscription-options"
+      {{ block.shopify_attributes }}
+    >
+      <div class="lushka-subscription-heading">
+        {{ block.settings.heading }}
+      </div>
+
+      <label class="lushka-purchase-option">
+        <span class="lushka-option-radio">
+          <input
+            type="radio"
+            name="lushka_purchase_option_{{ block.id }}"
+            value="one_time"
+            data-lushka-option
+            data-selling-plan-id=""
+            checked
+          >
+        </span>
+
+        <span class="lushka-option-content">
+          <span class="lushka-option-title">One-time purchase</span>
+          <span class="lushka-option-price">
+            {{ current_variant.price | money_with_currency }}
+          </span>
+        </span>
+      </label>
+
+      <label class="lushka-purchase-option lushka-subscription-choice">
+        <span class="lushka-option-radio">
+          <input
+            type="radio"
+            name="lushka_purchase_option_{{ block.id }}"
+            value="subscription"
+            data-lushka-option
+            data-selling-plan-id="{{ plan.id }}"
+          >
+        </span>
+
+        <span class="lushka-option-content">
+          <span class="lushka-option-title">
+            Subscribe &amp; save
+            {% if adjustment.value_type == 'percentage' %}
+              {{ adjustment.value | round }}%
+            {% endif %}
+          </span>
+
+          <span class="lushka-option-price">
+            {{ allocation.price | money_with_currency }}
+          </span>
+
+          <span class="lushka-option-description">
+            Monthly payment · 3 payments total
+          </span>
+
+          <span class="lushka-option-plan">
+            {{ plan.name }}
+          </span>
+        </span>
+      </label>
+
+      <div class="lushka-fixed-term-note">
+        No ongoing subscription after the third payment.
+      </div>
+    </div>
+
+    <style>
+      #lushka-subscription-{{ block.id }} {
+        margin: 20px 0;
+        font-family: inherit;
+      }
+
+      #lushka-subscription-{{ block.id }} .lushka-subscription-heading {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 12px;
+      }
+
+      #lushka-subscription-{{ block.id }} .lushka-purchase-option {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        padding: 14px 16px;
+        margin-bottom: 10px;
+        border: 1px solid rgba(0, 0, 0, 0.18);
+        border-radius: 8px;
+        cursor: pointer;
+      }
+
+      #lushka-subscription-{{ block.id }} .lushka-purchase-option:has(input:checked) {
+        border: 2pxsolid currentColor;
+      }
+
+      #lushka-subscription-{{ block.id }} .lushka-option-radio {
+        padding-top: 2px;
+      }
+
+      #lushka-subscription-{{ block.id }} .lushka-option-content {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        gap: 3px;
+      }
+
+      #lushka-subscription-{{ block.id }} .lushka-option-title {
+        font-weight: 600;
+      }
+
+      #lushka-subscription-{{ block.id }} .lushka-option-price {
+        font-size: 15px;
+      }
+
+      #lushka-subscription-{{ block.id }} .lushka-option-description,
+      #lushka-subscription-{{ block.id }} .lushka-option-plan,
+      #lushka-subscription-{{ block.id }} .lushka-fixed-term-note {
+        font-size: 13px;
+        opacity: 0.75;
+      }
+
+      #lushka-subscription-{{ block.id }} .lushka-fixed-term-note {
+        margin-top: 8px;
+      }
+    </style>
+
+    <script>
+      (() => {
+        const root = document.getElementById(
+          'lushka-subscription-{{ block.id }}'
+        );
+
+        if (!root) return;
+
+        function getProductForm() {
+          const section = root.closest('.shopify-section');
+
+          return (
+            section?.querySelector('form[action*="/cart/add"]') ||
+            document.querySelector('form[action*="/cart/add"]')
+          );
+        }
+
+        function syncSellingPlan() {
+          const form = getProductForm();
+
+          if (!form) return;
+
+          const selected = root.querySelector(
+            'input[data-lushka-option]:checked'
+          );
+
+          const sellingPlanId =
+            selected?.dataset.sellingPlanId || '';
+
+          let sellingPlanInput = form.querySelector(
+            'input[name="selling_plan"]'
+          );
+
+          if (sellingPlanId) {
+            if (!sellingPlanInput) {
+              sellingPlanInput = document.createElement('input');
+              sellingPlanInput.type = 'hidden';
+              sellingPlanInput.name = 'selling_plan';
+              sellingPlanInput.dataset.lushkaGenerated = 'true';
+              form.appendChild(sellingPlanInput);
+            }
+
+            sellingPlanInput.disabled = false;
+            sellingPlanInput.value = sellingPlanId;
+          } else if (sellingPlanInput) {
+            sellingPlanInput.value = '';
+            sellingPlanInput.disabled = true;
+          }
+        }
+
+        root.addEventListener('change', (event) => {
+          if (event.target.matches('input[data-lushka-option]')) {
+            syncSellingPlan();
+          }
+        });
+
+        syncSellingPlan();
+      })();
+    </script>
+  {% endif %}
+{% endif %}
+
+{% schema %}
+{
+  "name": "LUSHKA Subscription",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Choose your purchase option"
+    }
+  ]
+}
+{% endschema %}

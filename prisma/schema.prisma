@@ -1,0 +1,175 @@
+// Lushka Fixed-Term Subscriptions
+// Shopify Session model + Lushka subscription data
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:dev.sqlite"
+}
+
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+model ShopConfig {
+  id   String @id @default(cuid())
+  shop String @unique
+
+  completeParentProductId String?
+  completeParentVariantId String?
+
+  serumVariantId       String?
+  shampooVariantId     String?
+  conditionerVariantId String?
+  maskVariantId        String?
+  oilVariantId         String?
+  massagerVariantId    String?
+
+  locationId String?
+
+  completeSellingPlanGroupId String?
+  completeSellingPlanId      String?
+
+  serumSellingPlanGroupId String?
+  serumSellingPlanId      String?
+
+  shippingMode String @default("SHOPIFY_CHECKOUT")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ContractState {
+  id         String  @id @default(cuid())
+  shop       String
+  contractId String  @unique
+  customerId String?
+
+  planType String
+  status   String @default("ACTIVE")
+
+  successfulCycleCount Int     @default(0)
+  lastSuccessfulCycle  Int?
+  lastOrderId          String?
+
+  startedAt     DateTime  @default(now())
+  nextBillingAt DateTime?
+
+  completedAt DateTime?
+  failedAt    DateTime?
+
+  retryCount Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  attempts BillingAttempt[]
+
+  @@index([shop])
+  @@index([status])
+  @@index([nextBillingAt])
+}
+
+model BillingAttempt {
+  id String @id @default(cuid())
+
+  contractStateId String
+  contractId      String
+
+  cycleIndex     Int
+  idempotencyKey String @unique
+
+  status       String @default("PENDING")
+  attemptCount Int    @default(0)
+
+  error String?
+
+  shopifyBillingAttemptId String?
+  shopifyOrderId          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contractState ContractState @relation(fields: [contractStateId], references: [id], onDelete: Cascade)
+
+  @@unique([contractId, cycleIndex])
+  @@index([status])
+}
+
+model InventoryProcess {
+  id String @id @default(cuid())
+
+  shop     String
+  orderId  String
+  planType String
+
+  idempotencyKey String   @unique
+  processedAt    DateTime @default(now())
+
+  @@unique([shop, orderId, planType])
+  @@index([shop])
+}
+
+model ContinuationEvent {
+  id String @id @default(cuid())
+
+  shop       String
+  contractId String @unique
+
+  dueAt  DateTime
+  status String    @default("PENDING")
+  sentAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shop])
+  @@index([dueAt])
+  @@index([status])
+}
+
+model EmailEvent {
+  id String @id @default(cuid())
+
+  shop           String
+  contractId     String
+  orderId        String?
+  emailType      String
+  recipientEmail String
+
+  idempotencyKey String @unique
+
+  status            String    @default("PENDING")
+  attemptCount      Int       @default(0)
+  providerMessageId String?
+  error             String?
+  dueAt             DateTime?
+  sentAt            DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([contractId, emailType])
+  @@index([shop])
+  @@index([status])
+  @@index([dueAt])
+}
