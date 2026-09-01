@@ -1,6 +1,32 @@
+-- CreateSchema
+CREATE SCHEMA IF NOT EXISTS "public";
+
+-- CreateTable
+CREATE TABLE "Session" (
+    "id" TEXT NOT NULL,
+    "shop" TEXT NOT NULL,
+    "state" TEXT NOT NULL,
+    "isOnline" BOOLEAN NOT NULL DEFAULT false,
+    "scope" TEXT,
+    "expires" TIMESTAMP(3),
+    "accessToken" TEXT NOT NULL,
+    "userId" BIGINT,
+    "firstName" TEXT,
+    "lastName" TEXT,
+    "email" TEXT,
+    "accountOwner" BOOLEAN NOT NULL DEFAULT false,
+    "locale" TEXT,
+    "collaborator" BOOLEAN DEFAULT false,
+    "emailVerified" BOOLEAN DEFAULT false,
+    "refreshToken" TEXT,
+    "refreshTokenExpires" TIMESTAMP(3),
+
+    CONSTRAINT "Session_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateTable
 CREATE TABLE "ShopConfig" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "shop" TEXT NOT NULL,
     "completeParentProductId" TEXT,
     "completeParentVariantId" TEXT,
@@ -16,13 +42,15 @@ CREATE TABLE "ShopConfig" (
     "serumSellingPlanGroupId" TEXT,
     "serumSellingPlanId" TEXT,
     "shippingMode" TEXT NOT NULL DEFAULT 'SHOPIFY_CHECKOUT',
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ShopConfig_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "ContractState" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "shop" TEXT NOT NULL,
     "contractId" TEXT NOT NULL,
     "customerId" TEXT,
@@ -31,18 +59,20 @@ CREATE TABLE "ContractState" (
     "successfulCycleCount" INTEGER NOT NULL DEFAULT 0,
     "lastSuccessfulCycle" INTEGER,
     "lastOrderId" TEXT,
-    "startedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "nextBillingAt" DATETIME,
-    "completedAt" DATETIME,
-    "failedAt" DATETIME,
+    "startedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "nextBillingAt" TIMESTAMP(3),
+    "completedAt" TIMESTAMP(3),
+    "failedAt" TIMESTAMP(3),
     "retryCount" INTEGER NOT NULL DEFAULT 0,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ContractState_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "BillingAttempt" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "contractStateId" TEXT NOT NULL,
     "contractId" TEXT NOT NULL,
     "cycleIndex" INTEGER NOT NULL,
@@ -52,31 +82,57 @@ CREATE TABLE "BillingAttempt" (
     "error" TEXT,
     "shopifyBillingAttemptId" TEXT,
     "shopifyOrderId" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL,
-    CONSTRAINT "BillingAttempt_contractStateId_fkey" FOREIGN KEY ("contractStateId") REFERENCES "ContractState" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "BillingAttempt_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "InventoryProcess" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "shop" TEXT NOT NULL,
     "orderId" TEXT NOT NULL,
     "planType" TEXT NOT NULL,
     "idempotencyKey" TEXT NOT NULL,
-    "processedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "processedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "InventoryProcess_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "ContinuationEvent" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "shop" TEXT NOT NULL,
     "contractId" TEXT NOT NULL,
-    "dueAt" DATETIME NOT NULL,
+    "dueAt" TIMESTAMP(3) NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'PENDING',
-    "sentAt" DATETIME,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "sentAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ContinuationEvent_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "EmailEvent" (
+    "id" TEXT NOT NULL,
+    "shop" TEXT NOT NULL,
+    "contractId" TEXT NOT NULL,
+    "orderId" TEXT,
+    "emailType" TEXT NOT NULL,
+    "recipientEmail" TEXT NOT NULL,
+    "idempotencyKey" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'PENDING',
+    "attemptCount" INTEGER NOT NULL DEFAULT 0,
+    "providerMessageId" TEXT,
+    "error" TEXT,
+    "dueAt" TIMESTAMP(3),
+    "sentAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "EmailEvent_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -123,3 +179,22 @@ CREATE INDEX "ContinuationEvent_dueAt_idx" ON "ContinuationEvent"("dueAt");
 
 -- CreateIndex
 CREATE INDEX "ContinuationEvent_status_idx" ON "ContinuationEvent"("status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "EmailEvent_idempotencyKey_key" ON "EmailEvent"("idempotencyKey");
+
+-- CreateIndex
+CREATE INDEX "EmailEvent_shop_idx" ON "EmailEvent"("shop");
+
+-- CreateIndex
+CREATE INDEX "EmailEvent_status_idx" ON "EmailEvent"("status");
+
+-- CreateIndex
+CREATE INDEX "EmailEvent_dueAt_idx" ON "EmailEvent"("dueAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "EmailEvent_contractId_emailType_key" ON "EmailEvent"("contractId", "emailType");
+
+-- AddForeignKey
+ALTER TABLE "BillingAttempt" ADD CONSTRAINT "BillingAttempt_contractStateId_fkey" FOREIGN KEY ("contractStateId") REFERENCES "ContractState"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+

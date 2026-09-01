@@ -1,3 +1,34 @@
+node_modules
 .cache
 build
-node_modules
+app/build
+public/build
+
+# Secrets
+.env
+.env.*
+
+# Git / local tooling
+.git
+.gitignore
+.cursor
+.gemini
+.mcp.json
+
+# Local databases
+prisma/dev.sqlite
+prisma/dev.sqlite-journal
+database.sqlite
+
+# Local backups
+backups
+*.backup
+prisma/schema.sqlite.backup
+prisma/migrations.sqlite.backup
+
+# Shopify local development files
+.shopify
+.shopify.lock
+
+# OS files
+.DS_Store
