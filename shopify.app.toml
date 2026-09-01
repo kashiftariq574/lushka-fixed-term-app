@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "d3458017a2f675aa32b1df7963859d65"
-application_url = "https://example.com"
+application_url = "https://lushka-app-production.up.railway.app"
 embedded = true
 name = "lushka-fixed-term-app"
 
@@ -54,7 +54,7 @@ api_version = "2026-07"
   topics = [ "subscription_contracts/create" ]
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://lushka-app-production.up.railway.app/auth/callback" ]
 
 [build]
 include_config_on_deploy = true
