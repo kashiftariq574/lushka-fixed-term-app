@@ -1,6 +1,12 @@
 {% if product != blank %}
   {% assign current_variant = product.selected_or_first_available_variant %}
-  {% assign allocation = current_variant.selling_plan_allocations | first %}
+  {% for candidate_allocation in current_variant.selling_plan_allocations %}
+    {% assign candidate_plan = candidate_allocation.selling_plan %}
+    {% if candidate_plan.name == 'Complete Haircare Recovery 90' or candidate_plan.name == 'Serum Ritual 90' %}
+      {% assign allocation = candidate_allocation %}
+      {% break %}
+    {% endif %}
+  {% endfor %}
 
   {% if allocation != blank %}
     {% assign plan = allocation.selling_plan %}
