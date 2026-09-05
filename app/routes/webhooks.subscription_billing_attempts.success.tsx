@@ -206,6 +206,21 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     `ContractState updated: payment ${successfulCycleCount}/3, contract ${contractId}`,
   );
 
+  await db.billingAttempt.updateMany({
+    where: {
+      idempotencyKey: billingKey,
+    },
+    data: {
+      status: "SUCCESS",
+      shopifyOrderId: orderId,
+      error: null,
+    },
+  });
+
+  console.log(
+    `BillingAttempt marked SUCCESS: cycle ${cycleIndex}, contract ${contractId}`,
+  );
+
   // Shopify's inventory mutation is also idempotent, so even if two webhook
   // deliveries race before this row exists, the same inventory mutation key
   // cannot decrement inventory twice.

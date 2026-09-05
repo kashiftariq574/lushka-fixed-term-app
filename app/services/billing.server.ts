@@ -1,30 +1,78 @@
-import { assertBillableCycle, deterministicBillingKey } from "../domain/subscription-policy";
+import {
+  assertBillableCycle,
+  deterministicBillingKey,
+} from "../domain/subscription-policy";
 
-type GraphqlClient = { request: (query: string, opts?: { variables?: Record<string, unknown> }) => Promise<any> };
+type GraphqlClient = (
+  query: string,
+  options?: {
+    variables?: Record<string, unknown>;
+  },
+) => Promise<Response>;
 
 const BILL = `#graphql
-mutation BillingAttempt($contractId: ID!, $input: SubscriptionBillingAttemptInput!) {
-  subscriptionBillingAttemptCreate(subscriptionContractId: $contractId, subscriptionBillingAttemptInput: $input) {
-    subscriptionBillingAttempt { id ready errorMessage nextActionUrl order { id } }
-    userErrors { field message }
+mutation BillingAttempt(
+  $contractId: ID!
+  $input: SubscriptionBillingAttemptInput!
+) {
+  subscriptionBillingAttemptCreate(
+    subscriptionContractId: $contractId
+    subscriptionBillingAttemptInput: $input
+  ) {
+    subscriptionBillingAttempt {
+      id
+      ready
+      errorMessage
+      nextActionUrl
+      order {
+        id
+      }
+    }
+    userErrors {
+      field
+      message
+    }
   }
 }`;
 
-export async function createBillingAttempt(client: GraphqlClient, contractId: string, cycleIndex: number) {
-  assertBillableCycle(cycleIndex); // hard stop before any Shopify API call
+export async function createBillingAttempt(
+  graphql: GraphqlClient,
+  contractId: string,
+  cycleIndex: number,
+) {
+  assertBillableCycle(cycleIndex);
+
   const idempotencyKey = deterministicBillingKey(contractId, cycleIndex);
-  const result = await client.request(BILL, {
+
+  const response = await graphql(BILL, {
     variables: {
       contractId,
       input: {
-        billingCycleSelector: { index: cycleIndex },
+        billingCycleSelector: {
+          index: cycleIndex,
+        },
         idempotencyKey,
         originTime: new Date().toISOString(),
       },
     },
   });
-  const payload = result?.data?.subscriptionBillingAttemptCreate ?? result?.subscriptionBillingAttemptCreate;
+
+  const result = await response.json();
+
+  const payload =
+    result?.data?.subscriptionBillingAttemptCreate ??
+    result?.subscriptionBillingAttemptCreate;
+
   const errors = payload?.userErrors ?? [];
-  if (errors.length) throw new Error(`Billing attempt rejected: ${JSON.stringify(errors)}`);
-  return { idempotencyKey, attempt: payload?.subscriptionBillingAttempt };
+
+  if (errors.length) {
+    throw new Error(
+      `Billing attempt rejected: ${JSON.stringify(errors)}`,
+    );
+  }
+
+  return {
+    idempotencyKey,
+    attempt: payload?.subscriptionBillingAttempt,
+  };
 }
