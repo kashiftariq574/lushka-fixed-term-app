@@ -45,3 +45,17 @@ export function deterministicBillingKey(contractId: string, cycleIndex: number):
   assertBillableCycle(cycleIndex);
   return `lushka:${contractId}:cycle:${cycleIndex}`;
 }
+
+export function retryBillingKey(
+  contractId: string,
+  cycleIndex: number,
+  attemptNumber: number,
+): string {
+  assertBillableCycle(cycleIndex);
+
+  if (!Number.isInteger(attemptNumber) || attemptNumber < 1) {
+    throw new Error("Invalid retry attempt number");
+  }
+
+  return `lushka:${contractId}:cycle:${cycleIndex}:retry:${attemptNumber}`;
+}

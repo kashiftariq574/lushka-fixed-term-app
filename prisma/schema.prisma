@@ -111,7 +111,8 @@ model BillingAttempt {
 
   contractState ContractState @relation(fields: [contractStateId], references: [id], onDelete: Cascade)
 
-  @@unique([contractId, cycleIndex])
+  @@unique([contractId, cycleIndex, attemptCount])
+  @@index([contractId, cycleIndex])
   @@index([status])
 }
 

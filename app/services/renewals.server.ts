@@ -1,7 +1,10 @@
 import prisma from "../db.server";
 import { unauthenticated } from "../shopify.server";
 import { createBillingAttempt } from "./billing.server";
-import { deterministicBillingKey } from "../domain/subscription-policy";
+import {
+  deterministicBillingKey,
+  retryBillingKey,
+} from "../domain/subscription-policy";
 
 export async function processDueRenewals(now = new Date()) {
   const dueContracts = await prisma.contractState.findMany({
@@ -33,21 +36,21 @@ export async function processDueRenewals(now = new Date()) {
       continue;
     }
 
-    const idempotencyKey = deterministicBillingKey(
-      contractState.contractId,
-      cycleIndex,
-    );
-
-    const existingAttempt = await prisma.billingAttempt.findUnique({
+    const attempts = await prisma.billingAttempt.findMany({
       where: {
-        contractId_cycleIndex: {
-          contractId: contractState.contractId,
-          cycleIndex,
-        },
+        contractId: contractState.contractId,
+        cycleIndex,
+      },
+      orderBy: {
+        createdAt: "desc",
       },
     });
 
-    if (existingAttempt?.status === "SUCCESS") {
+    const existingSuccess = attempts.find(
+      (attempt) => attempt.status === "SUCCESS",
+    );
+
+    if (existingSuccess) {
       results.push({
         contractId: contractState.contractId,
         cycleIndex,
@@ -57,44 +60,91 @@ export async function processDueRenewals(now = new Date()) {
       continue;
     }
 
+    const latestAttempt = attempts[0];
+
     if (
-      existingAttempt &&
-      ["PENDING", "SUBMITTED", "CHALLENGED", "FAILED"].includes(
-        existingAttempt.status,
-      )
+      latestAttempt &&
+      ["PENDING", "SUBMITTED", "CHALLENGED"].includes(latestAttempt.status)
     ) {
       results.push({
         contractId: contractState.contractId,
         cycleIndex,
         skipped: true,
-        reason: `Existing billing attempt status: ${existingAttempt.status}`,
+        reason: `Existing billing attempt status: ${latestAttempt.status}`,
       });
       continue;
     }
 
-    const attemptRecord = await prisma.billingAttempt.upsert({
-      where: {
-        contractId_cycleIndex: {
+    const MAX_ATTEMPTS_PER_CYCLE = 3;
+    const RETRY_DELAY_MS = 2 * 60 * 1000;
+
+    if (latestAttempt?.status === "FAILED") {
+      if (attempts.length >= MAX_ATTEMPTS_PER_CYCLE) {
+        results.push({
           contractId: contractState.contractId,
           cycleIndex,
+          skipped: true,
+          reason: "Maximum billing attempts reached for this cycle",
+        });
+        continue;
+      }
+
+      const retryAvailableAt =
+        latestAttempt.updatedAt.getTime() + RETRY_DELAY_MS;
+
+      if (now.getTime() < retryAvailableAt) {
+        results.push({
+          contractId: contractState.contractId,
+          cycleIndex,
+          skipped: true,
+          reason: "Waiting 2 minutes before retrying failed payment",
+        });
+        continue;
+      }
+    }
+
+    const attemptNumber = attempts.length + 1;
+
+    const idempotencyKey =
+      attemptNumber === 1
+        ? deterministicBillingKey(contractState.contractId, cycleIndex)
+        : retryBillingKey(
+            contractState.contractId,
+            cycleIndex,
+            attemptNumber - 1,
+          );
+
+    let attemptRecord;
+
+    try {
+      attemptRecord = await prisma.billingAttempt.create({
+        data: {
+          contractStateId: contractState.id,
+          contractId: contractState.contractId,
+          cycleIndex,
+          idempotencyKey,
+          status: "PENDING",
+          attemptCount: attemptNumber,
         },
-      },
-      create: {
-        contractStateId: contractState.id,
-        contractId: contractState.contractId,
-        cycleIndex,
-        idempotencyKey,
-        status: "PENDING",
-        attemptCount: 1,
-      },
-      update: {
-        status: "PENDING",
-        attemptCount: {
-          increment: 1,
-        },
-        error: null,
-      },
-    });
+      });
+    } catch (error) {
+      const prismaCode =
+        typeof error === "object" && error !== null && "code" in error
+          ? String((error as { code?: unknown }).code)
+          : null;
+
+      if (prismaCode === "P2002") {
+        results.push({
+          contractId: contractState.contractId,
+          cycleIndex,
+          skipped: true,
+          reason: "Concurrent billing attempt already created",
+        });
+        continue;
+      }
+
+      throw error;
+    }
 
     try {
       const { admin } = await unauthenticated.admin(contractState.shop);
@@ -103,6 +153,7 @@ export async function processDueRenewals(now = new Date()) {
         admin.graphql,
         contractState.contractId,
         cycleIndex,
+        idempotencyKey,
       );
 
       await prisma.billingAttempt.updateMany({

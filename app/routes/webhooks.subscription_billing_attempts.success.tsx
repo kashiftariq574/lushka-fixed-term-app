@@ -34,7 +34,9 @@ function cycleFromBillingKey(key: string, contractId: string): number {
     throw new Error(`Unexpected billing idempotency key: ${key}`);
   }
 
-  const cycleIndex = Number(key.slice(prefix.length));
+  const remainder = key.slice(prefix.length);
+  const cyclePart = remainder.split(":")[0];
+  const cycleIndex = Number(cyclePart);
 
   assertBillableCycle(cycleIndex);
 

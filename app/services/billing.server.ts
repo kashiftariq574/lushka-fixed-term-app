@@ -39,10 +39,13 @@ export async function createBillingAttempt(
   graphql: GraphqlClient,
   contractId: string,
   cycleIndex: number,
+  suppliedIdempotencyKey?: string,
 ) {
   assertBillableCycle(cycleIndex);
 
-  const idempotencyKey = deterministicBillingKey(contractId, cycleIndex);
+  const idempotencyKey =
+    suppliedIdempotencyKey ??
+    deterministicBillingKey(contractId, cycleIndex);
 
   const response = await graphql(BILL, {
     variables: {
