@@ -57,6 +57,21 @@ export async function processDueRenewals(now = new Date()) {
       continue;
     }
 
+    if (
+      existingAttempt &&
+      ["PENDING", "SUBMITTED", "CHALLENGED", "FAILED"].includes(
+        existingAttempt.status,
+      )
+    ) {
+      results.push({
+        contractId: contractState.contractId,
+        cycleIndex,
+        skipped: true,
+        reason: `Existing billing attempt status: ${existingAttempt.status}`,
+      });
+      continue;
+    }
+
     const attemptRecord = await prisma.billingAttempt.upsert({
       where: {
         contractId_cycleIndex: {
