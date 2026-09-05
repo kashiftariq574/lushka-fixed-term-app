@@ -158,17 +158,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
   }
 
-  const inventoryIdempotencyKey = `inventory:${billingKey}`;
-
-  await deductVariantInventory({
-    graphql: admin.graphql,
-    variantIds,
-    locationId: config.locationId,
-    idempotencyKey: inventoryIdempotencyKey,
-    referenceDocumentUri:
-      `lushka://subscription/${contractId.split("/").pop()}/cycle/${cycleIndex}`,
-  });
-
   const contractState = await db.contractState.findUnique({
     where: {
       contractId,
@@ -182,6 +171,37 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   const successfulCycleCount = cycleIndex + 1;
+
+  if (successfulCycleCount <= contractState.successfulCycleCount) {
+    console.log(
+      `Ignoring stale/already-applied billing success for cycle ${cycleIndex}, contract ${contractId}`,
+    );
+
+    await db.billingAttempt.updateMany({
+      where: {
+        idempotencyKey: billingKey,
+      },
+      data: {
+        status: "SUCCESS",
+        shopifyOrderId: orderId,
+        error: null,
+      },
+    });
+
+    return new Response();
+  }
+
+  const inventoryIdempotencyKey = `inventory:${billingKey}`;
+
+  await deductVariantInventory({
+    graphql: admin.graphql,
+    variantIds,
+    locationId: config.locationId,
+    idempotencyKey: inventoryIdempotencyKey,
+    referenceDocumentUri:
+      `lushka://subscription/${contractId.split("/").pop()}/cycle/${cycleIndex}`,
+  });
+
   const completed = isCompleteAfterSuccess(successfulCycleCount);
 
   await db.contractState.update({
