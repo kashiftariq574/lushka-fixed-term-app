@@ -24,6 +24,14 @@ api_version = "2026-07"
   uri = "/webhooks/subscription_billing_attempts/success"
   topics = [ "subscription_billing_attempts/success" ]
 
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/subscription_billing_attempts/failure"
+  topics = [ "subscription_billing_attempts/failure" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/subscription_billing_attempts/challenged"
+  topics = [ "subscription_billing_attempts/challenged" ]
+
 
   [[webhooks.subscriptions]]
   uri = "/webhooks/subscription_contracts/create"
