@@ -6,6 +6,11 @@ import {
   retryBillingKey,
 } from "../domain/subscription-policy";
 
+import {
+  hasReachedMaxAttempts,
+  isRetryReady,
+} from "../domain/renewal-retry-policy";
+
 export async function processDueRenewals(now = new Date()) {
   const dueContracts = await prisma.contractState.findMany({
     where: {
@@ -75,11 +80,8 @@ export async function processDueRenewals(now = new Date()) {
       continue;
     }
 
-    const MAX_ATTEMPTS_PER_CYCLE = 3;
-    const RETRY_DELAY_MS = 2 * 60 * 1000;
-
     if (latestAttempt?.status === "FAILED") {
-      if (attempts.length >= MAX_ATTEMPTS_PER_CYCLE) {
+      if (hasReachedMaxAttempts(attempts.length)) {
         results.push({
           contractId: contractState.contractId,
           cycleIndex,
@@ -89,10 +91,7 @@ export async function processDueRenewals(now = new Date()) {
         continue;
       }
 
-      const retryAvailableAt =
-        latestAttempt.updatedAt.getTime() + RETRY_DELAY_MS;
-
-      if (now.getTime() < retryAvailableAt) {
+      if (!isRetryReady(latestAttempt.updatedAt, now)) {
         results.push({
           contractId: contractState.contractId,
           cycleIndex,
