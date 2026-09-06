@@ -26,6 +26,7 @@ const CONTRACT_QUERY = `#graphql
       lines(first: 10) {
         nodes {
           sellingPlanId
+          quantity
         }
       }
     }
@@ -99,11 +100,34 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
   }
 
+  const lines = contract.lines?.nodes ?? [];
+
   const sellingPlanIds = new Set(
-    (contract.lines?.nodes ?? [])
+    lines
       .map((line: any) => line?.sellingPlanId)
       .filter(Boolean),
   );
+
+  const lushkaLines = lines.filter(
+    (line: any) =>
+      line?.sellingPlanId === config.completeSellingPlanId ||
+      line?.sellingPlanId === config.serumSellingPlanId,
+  );
+
+  if (
+    lushkaLines.length !== 1 ||
+    Number(lushkaLines[0]?.quantity) !== 1
+  ) {
+    console.error(
+      `Invalid LUSHKA subscription quantity for contract ${contractId}`,
+      lushkaLines,
+    );
+
+    return new Response(
+      "LUSHKA subscriptions require exactly one subscription unit",
+      { status: 422 },
+    );
+  }
 
   let planType: string;
   let variantIds: string[];
