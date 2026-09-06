@@ -32,6 +32,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     },
   });
 
+  await prisma.contractState.updateMany({
+    where: {
+      contractId,
+      status: {
+        not: "COMPLETED",
+      },
+    },
+    data: {
+      status: "CHALLENGED",
+      failedAt: new Date(),
+    },
+  });
+
   console.warn("Subscription billing attempt challenged", {
     shop,
     contractId,

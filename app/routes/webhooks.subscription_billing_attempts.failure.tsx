@@ -39,8 +39,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   await prisma.contractState.updateMany({
     where: {
       contractId,
+      status: {
+        in: ["ACTIVE", "CHALLENGED"],
+      },
     },
     data: {
+      status: "ACTIVE",
       failedAt: new Date(),
     },
   });
