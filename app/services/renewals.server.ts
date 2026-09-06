@@ -96,7 +96,7 @@ export async function processDueRenewals(now = new Date()) {
           contractId: contractState.contractId,
           cycleIndex,
           skipped: true,
-          reason: "Waiting 2 minutes before retrying failed payment",
+          reason: "Waiting 5 minutes before retrying failed payment",
         });
         continue;
       }

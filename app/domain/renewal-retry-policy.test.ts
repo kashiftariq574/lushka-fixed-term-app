@@ -8,21 +8,21 @@ import {
 describe("renewal retry policy", () => {
   const failedAt = new Date("2026-09-06T12:00:00.000Z");
 
-  it("does not retry before 2 minutes", () => {
-    const now = new Date("2026-09-06T12:01:59.000Z");
+  it("does not retry before 5 minutes", () => {
+    const now = new Date("2026-09-06T12:04:59.000Z");
 
     expect(isRetryReady(failedAt, now)).toBe(false);
   });
 
-  it("allows retry exactly at 2 minutes", () => {
-    const now = new Date("2026-09-06T12:02:00.000Z");
+  it("allows retry exactly at 5 minutes", () => {
+    const now = new Date("2026-09-06T12:05:00.000Z");
 
     expect(isRetryReady(failedAt, now)).toBe(true);
   });
 
   it("calculates retry availability correctly", () => {
     expect(retryAvailableAt(failedAt).toISOString()).toBe(
-      "2026-09-06T12:02:00.000Z",
+      "2026-09-06T12:05:00.000Z",
     );
   });
 

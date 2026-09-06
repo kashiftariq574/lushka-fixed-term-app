@@ -1,8 +1,6 @@
 export const MAX_ATTEMPTS_PER_CYCLE = 3;
 
-// TESTING:
-// Change this to 5 minutes before production launch.
-export const RETRY_DELAY_MS = 2 * 60 * 1000;
+export const RETRY_DELAY_MS = 5 * 60 * 1000;
 
 export function retryAvailableAt(
   failedAttemptUpdatedAt: Date,

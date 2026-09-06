@@ -106,16 +106,16 @@ describe("processDueRenewals safety skips", () => {
     },
   );
 
-  it("waits when FAILED attempt is less than 2 minutes old", async () => {
+  it("waits when FAILED attempt is less than 5 minutes old", async () => {
     billingFindMany.mockResolvedValue([
-      attempt("FAILED", new Date("2026-09-06T12:08:01.000Z")),
+      attempt("FAILED", new Date("2026-09-06T12:05:01.000Z")),
     ]);
 
     const result = await processDueRenewals(now);
 
     expect(result.results[0]).toMatchObject({
       skipped: true,
-      reason: "Waiting 2 minutes before retrying failed payment",
+      reason: "Waiting 5 minutes before retrying failed payment",
     });
     expect(billingCreate).not.toHaveBeenCalled();
     expect(createBillingAttemptMock).not.toHaveBeenCalled();
@@ -150,7 +150,7 @@ describe("processDueRenewals retry creation", () => {
       {
         ...attempt(
           "FAILED",
-          new Date("2026-09-06T12:07:00.000Z"),
+          new Date("2026-09-06T12:04:00.000Z"),
         ),
         id: "attempt-1",
         attemptCount: 1,
@@ -224,7 +224,7 @@ describe("processDueRenewals second retry", () => {
       {
         ...attempt(
           "FAILED",
-          new Date("2026-09-06T12:07:00.000Z"),
+          new Date("2026-09-06T12:04:00.000Z"),
         ),
         id: "attempt-2",
         attemptCount: 2,
