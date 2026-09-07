@@ -220,15 +220,7 @@ describe("subscription contract create webhook safety", () => {
 
     expect(response.status).toBe(200);
 
-    expect(deductInventoryMock).toHaveBeenCalledWith({
-      graphql: adminGraphqlMock,
-      variantIds: [
-        config.serumVariantId,
-      ],
-      locationId: config.locationId,
-      idempotencyKey: `inventory:initial:${contractId}`,
-      referenceDocumentUri: "lushka://subscription/123/initial",
-    });
+    expect(deductInventoryMock).not.toHaveBeenCalled();
 
     expect(inventoryUpsert).toHaveBeenCalledWith({
       where: {

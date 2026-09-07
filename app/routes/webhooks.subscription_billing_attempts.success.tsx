@@ -173,9 +173,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   ) {
     planType = SERUM.code;
 
-    variantIds = [
-      requireValue(config.serumVariantId, "serumVariantId"),
-    ];
+    // Serum Ritual uses the real Shopify serum variant.
+    // Shopify decrements that variant inventory on the actual order,
+    // so the app must not manually decrement it again.
+    variantIds = [];
   } else {
     return new Response("Unknown LUSHKA subscription selling plan", {
       status: 500,
@@ -217,14 +218,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   const inventoryIdempotencyKey = `inventory:${billingKey}`;
 
-  await deductVariantInventory({
-    graphql: admin.graphql,
-    variantIds,
-    locationId: config.locationId,
-    idempotencyKey: inventoryIdempotencyKey,
-    referenceDocumentUri:
-      `lushka://subscription/${contractId.split("/").pop()}/cycle/${cycleIndex}`,
-  });
+  if (variantIds.length > 0) {
+    await deductVariantInventory({
+      graphql: admin.graphql,
+      variantIds,
+      locationId: config.locationId,
+      idempotencyKey: inventoryIdempotencyKey,
+      referenceDocumentUri:
+        `lushka://subscription/${contractId.split("/").pop()}/cycle/${cycleIndex}`,
+    });
+  }
 
   const completed = isCompleteAfterSuccess(successfulCycleCount);
 

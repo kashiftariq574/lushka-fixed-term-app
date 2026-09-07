@@ -155,9 +155,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   ) {
     planType = SERUM.code;
 
-    variantIds = [
-      requireValue(config.serumVariantId, "serumVariantId"),
-    ];
+    // Serum Ritual uses the real Shopify serum variant.
+    // Shopify decrements that variant inventory on the actual order,
+    // so the app must not manually decrement it again.
+    variantIds = [];
   } else {
     console.error(
       `Ignoring unknown subscription plan for contract ${contractId}`,
@@ -214,14 +215,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
 
   if (!inventoryAlreadyProcessed) {
-    await deductVariantInventory({
-      graphql: admin.graphql,
-      variantIds,
-      locationId: config.locationId,
-      idempotencyKey: `inventory:${initialInventoryKey}`,
-      referenceDocumentUri:
-        `lushka://subscription/${contractId.split("/").pop()}/initial`,
-    });
+    if (variantIds.length > 0) {
+      await deductVariantInventory({
+        graphql: admin.graphql,
+        variantIds,
+        locationId: config.locationId,
+        idempotencyKey: `inventory:${initialInventoryKey}`,
+        referenceDocumentUri:
+          `lushka://subscription/${contractId.split("/").pop()}/initial`,
+      });
+    }
 
     await db.inventoryProcess.upsert({
       where: {

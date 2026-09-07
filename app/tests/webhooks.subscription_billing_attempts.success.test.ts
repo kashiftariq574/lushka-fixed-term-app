@@ -404,15 +404,7 @@ describe("subscription billing success webhook safety", () => {
 
     expect(response.status).toBe(200);
 
-    expect(deductInventoryMock).toHaveBeenCalledWith({
-      graphql: adminGraphqlMock,
-      variantIds: [
-        config.serumVariantId,
-      ],
-      locationId: config.locationId,
-      idempotencyKey: `inventory:${billingKey}`,
-      referenceDocumentUri: "lushka://subscription/123/cycle/1",
-    });
+    expect(deductInventoryMock).not.toHaveBeenCalled();
 
     expect(contractStateUpdate).toHaveBeenCalledWith({
       where: {
@@ -499,15 +491,7 @@ describe("subscription billing success webhook safety", () => {
 
     expect(response.status).toBe(200);
 
-    expect(deductInventoryMock).toHaveBeenCalledWith({
-      graphql: adminGraphqlMock,
-      variantIds: [
-        config.serumVariantId,
-      ],
-      locationId: config.locationId,
-      idempotencyKey: `inventory:${cycleTwoBillingKey}`,
-      referenceDocumentUri: "lushka://subscription/123/cycle/2",
-    });
+    expect(deductInventoryMock).not.toHaveBeenCalled();
 
     expect(contractStateUpdate).toHaveBeenCalledWith({
       where: {
