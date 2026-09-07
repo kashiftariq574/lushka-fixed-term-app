@@ -37,6 +37,10 @@ api_version = "2026-07"
   uri = "/webhooks/subscription_contracts/create"
   topics = [ "subscription_contracts/create" ]
 
+[[webhooks.subscriptions]]
+uri = "/webhooks/subscription_contracts/update"
+topics = [ "subscription_contracts/update" ]
+
 [auth]
 redirect_urls = [ "https://lushka-app-production.up.railway.app/auth/callback" ]
 
