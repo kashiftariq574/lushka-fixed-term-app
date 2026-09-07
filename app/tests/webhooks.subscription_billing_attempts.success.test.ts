@@ -10,6 +10,7 @@ const {
   contractStateUpdate,
   billingUpdateMany,
   deductInventoryMock,
+  consumeCompleteReservedInventoryMock,
 } = vi.hoisted(() => ({
   authenticateWebhookMock: vi.fn(),
   adminGraphqlMock: vi.fn(),
@@ -20,6 +21,7 @@ const {
   contractStateUpdate: vi.fn(),
   billingUpdateMany: vi.fn(),
   deductInventoryMock: vi.fn(),
+  consumeCompleteReservedInventoryMock: vi.fn(),
 }));
 
 vi.mock("../shopify.server", () => ({
@@ -49,6 +51,11 @@ vi.mock("../db.server", () => ({
 
 vi.mock("../services/inventory.server", () => ({
   deductVariantInventory: deductInventoryMock,
+}));
+
+vi.mock("../services/program-inventory-consumption.server", () => ({
+  consumeCompleteReservedInventory:
+    consumeCompleteReservedInventoryMock,
 }));
 
 import { action } from "../routes/webhooks.subscription_billing_attempts.success";
@@ -86,6 +93,10 @@ describe("subscription billing success webhook safety", () => {
     inventoryUpsert.mockResolvedValue({});
     contractStateUpdate.mockResolvedValue({});
     deductInventoryMock.mockResolvedValue(undefined);
+    consumeCompleteReservedInventoryMock.mockResolvedValue({
+      consumed: 5,
+      skipped: false,
+    });
   });
 
   it("skips duplicate inventory processing for an already processed billing key", async () => {
@@ -105,6 +116,9 @@ describe("subscription billing success webhook safety", () => {
     expect(shopConfigFindUnique).not.toHaveBeenCalled();
     expect(adminGraphqlMock).not.toHaveBeenCalled();
     expect(deductInventoryMock).not.toHaveBeenCalled();
+    expect(
+      consumeCompleteReservedInventoryMock,
+    ).not.toHaveBeenCalled();
     expect(contractStateUpdate).not.toHaveBeenCalled();
     expect(inventoryUpsert).not.toHaveBeenCalled();
   });
@@ -158,6 +172,9 @@ describe("subscription billing success webhook safety", () => {
     expect(response.status).toBe(200);
 
     expect(deductInventoryMock).not.toHaveBeenCalled();
+    expect(
+      consumeCompleteReservedInventoryMock,
+    ).not.toHaveBeenCalled();
     expect(contractStateUpdate).not.toHaveBeenCalled();
     expect(inventoryUpsert).not.toHaveBeenCalled();
 
@@ -224,8 +241,14 @@ describe("subscription billing success webhook safety", () => {
 
     expect(response.status).toBe(200);
 
-    expect(deductInventoryMock).toHaveBeenCalledWith({
+    expect(deductInventoryMock).not.toHaveBeenCalled();
+
+    expect(
+      consumeCompleteReservedInventoryMock,
+    ).toHaveBeenCalledWith({
       graphql: adminGraphqlMock,
+      contractId,
+      locationId: config.locationId,
       variantIds: [
         config.serumVariantId,
         config.shampooVariantId,
@@ -233,9 +256,7 @@ describe("subscription billing success webhook safety", () => {
         config.maskVariantId,
         config.oilVariantId,
       ],
-      locationId: config.locationId,
-      idempotencyKey: `inventory:${billingKey}`,
-      referenceDocumentUri: "lushka://subscription/123/cycle/1",
+      cycleIndex: 1,
     });
 
     expect(contractStateUpdate).toHaveBeenCalledWith({
@@ -323,8 +344,14 @@ describe("subscription billing success webhook safety", () => {
 
     expect(response.status).toBe(200);
 
-    expect(deductInventoryMock).toHaveBeenCalledWith({
+    expect(deductInventoryMock).not.toHaveBeenCalled();
+
+    expect(
+      consumeCompleteReservedInventoryMock,
+    ).toHaveBeenCalledWith({
       graphql: adminGraphqlMock,
+      contractId,
+      locationId: config.locationId,
       variantIds: [
         config.serumVariantId,
         config.shampooVariantId,
@@ -332,9 +359,7 @@ describe("subscription billing success webhook safety", () => {
         config.maskVariantId,
         config.oilVariantId,
       ],
-      locationId: config.locationId,
-      idempotencyKey: `inventory:${cycleTwoBillingKey}`,
-      referenceDocumentUri: "lushka://subscription/123/cycle/2",
+      cycleIndex: 2,
     });
 
     expect(contractStateUpdate).toHaveBeenCalledWith({
@@ -405,6 +430,9 @@ describe("subscription billing success webhook safety", () => {
     expect(response.status).toBe(200);
 
     expect(deductInventoryMock).not.toHaveBeenCalled();
+    expect(
+      consumeCompleteReservedInventoryMock,
+    ).not.toHaveBeenCalled();
 
     expect(contractStateUpdate).toHaveBeenCalledWith({
       where: {
@@ -492,6 +520,9 @@ describe("subscription billing success webhook safety", () => {
     expect(response.status).toBe(200);
 
     expect(deductInventoryMock).not.toHaveBeenCalled();
+    expect(
+      consumeCompleteReservedInventoryMock,
+    ).not.toHaveBeenCalled();
 
     expect(contractStateUpdate).toHaveBeenCalledWith({
       where: {

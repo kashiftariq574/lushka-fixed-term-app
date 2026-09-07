@@ -77,16 +77,23 @@ model ContractState {
   completedAt DateTime?
   failedAt    DateTime?
 
+  // Set after all automatic renewal attempts fail.
+  // Reserved programme stock remains protected until this deadline.
+  paymentHoldStartedAt DateTime?
+  paymentHoldUntil     DateTime?
+
   retryCount Int @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  attempts BillingAttempt[]
+  attempts     BillingAttempt[]
+  reservations InventoryReservation[]
 
   @@index([shop])
   @@index([status])
   @@index([nextBillingAt])
+  @@index([paymentHoldUntil])
 }
 
 model BillingAttempt {
@@ -113,6 +120,47 @@ model BillingAttempt {
 
   @@unique([contractId, cycleIndex, attemptCount])
   @@index([contractId, cycleIndex])
+  @@index([status])
+}
+
+model InventoryReservation {
+  id String @id @default(cuid())
+
+  shop       String
+  contractId String
+  planType   String
+
+  variantId       String
+  inventoryItemId String
+  locationId      String
+
+  // Future programme units placed aside for this contract.
+  reservedQuantity Int
+
+  // Increments whenever a rolled-back reservation is attempted again.
+  // Used to generate a fresh Shopify idempotency key after rollback.
+  reservationAttempt Int @default(1)
+
+  // Increments when a renewal reservation release is rolled back,
+  // so the next retry receives a fresh Shopify idempotency key.
+  consumptionAttempt Int @default(1)
+
+  // Units already used by successful future deliveries.
+  consumedQuantity Int @default(0)
+
+  // Units returned to sellable inventory after cancellation/hold expiry.
+  releasedQuantity Int @default(0)
+
+  status String @default("ACTIVE")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contractState ContractState @relation(fields: [contractId], references: [contractId], onDelete: Cascade)
+
+  @@unique([contractId, variantId])
+  @@index([shop])
+  @@index([contractId])
   @@index([status])
 }
 

@@ -8,6 +8,7 @@ const {
   inventoryFindUnique,
   inventoryUpsert,
   deductInventoryMock,
+  reserveCompleteFutureInventoryMock,
 } = vi.hoisted(() => ({
   authenticateWebhookMock: vi.fn(),
   adminGraphqlMock: vi.fn(),
@@ -16,6 +17,7 @@ const {
   inventoryFindUnique: vi.fn(),
   inventoryUpsert: vi.fn(),
   deductInventoryMock: vi.fn(),
+  reserveCompleteFutureInventoryMock: vi.fn(),
 }));
 
 vi.mock("../shopify.server", () => ({
@@ -41,6 +43,10 @@ vi.mock("../db.server", () => ({
 
 vi.mock("../services/inventory.server", () => ({
   deductVariantInventory: deductInventoryMock,
+}));
+
+vi.mock("../services/program-inventory-reservations.server", () => ({
+  reserveCompleteFutureInventory: reserveCompleteFutureInventoryMock,
 }));
 
 import { action } from "../routes/webhooks.subscription_contracts.create";
@@ -114,6 +120,7 @@ describe("subscription contract create webhook safety", () => {
     inventoryFindUnique.mockResolvedValue(null);
     inventoryUpsert.mockResolvedValue({});
     deductInventoryMock.mockResolvedValue(undefined);
+    reserveCompleteFutureInventoryMock.mockResolvedValue(undefined);
   });
 
   it("processes Complete plan initial inventory including the massager", async () => {
@@ -154,6 +161,24 @@ describe("subscription contract create webhook safety", () => {
         idempotencyKey: `initial:${contractId}`,
       },
     });
+
+    expect(
+      reserveCompleteFutureInventoryMock,
+    ).toHaveBeenCalledWith({
+      graphql: adminGraphqlMock,
+      shop,
+      contractId,
+      planType: "COMPLETE_RECOVERY_90",
+      locationId: config.locationId,
+      variantIds: [
+        config.serumVariantId,
+        config.shampooVariantId,
+        config.conditionerVariantId,
+        config.maskVariantId,
+        config.oilVariantId,
+      ],
+      unitsPerVariant: 2,
+    });
   });
 
   it("does not deduct inventory again when initial inventory was already processed", async () => {
@@ -171,6 +196,12 @@ describe("subscription contract create webhook safety", () => {
     expect(response.status).toBe(200);
     expect(deductInventoryMock).not.toHaveBeenCalled();
     expect(inventoryUpsert).not.toHaveBeenCalled();
+
+    // Reservation reconciliation must still run independently of
+    // initial-delivery inventory idempotency.
+    expect(
+      reserveCompleteFutureInventoryMock,
+    ).toHaveBeenCalledTimes(1);
   });
 
   it("rejects a LUSHKA subscription quantity greater than one", async () => {
@@ -186,6 +217,9 @@ describe("subscription contract create webhook safety", () => {
     expect(contractStateUpsert).not.toHaveBeenCalled();
     expect(deductInventoryMock).not.toHaveBeenCalled();
     expect(inventoryUpsert).not.toHaveBeenCalled();
+    expect(
+      reserveCompleteFutureInventoryMock,
+    ).not.toHaveBeenCalled();
   });
 
   it("processes Serum Ritual initial inventory with serum only", async () => {
@@ -221,6 +255,9 @@ describe("subscription contract create webhook safety", () => {
     expect(response.status).toBe(200);
 
     expect(deductInventoryMock).not.toHaveBeenCalled();
+    expect(
+      reserveCompleteFutureInventoryMock,
+    ).not.toHaveBeenCalled();
 
     expect(inventoryUpsert).toHaveBeenCalledWith({
       where: {

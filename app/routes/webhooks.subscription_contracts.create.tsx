@@ -4,6 +4,7 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { COMPLETE, SERUM } from "../domain/subscription-policy";
 import { deductVariantInventory } from "../services/inventory.server";
+import { reserveCompleteFutureInventory } from "../services/program-inventory-reservations.server";
 
 type ContractCreatePayload = {
   admin_graphql_api_id?: string;
@@ -131,6 +132,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   let planType: string;
   let variantIds: string[];
+  let futureReservationVariantIds: string[] = [];
 
   if (
     config.completeSellingPlanId &&
@@ -145,6 +147,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       requireValue(config.maskVariantId, "maskVariantId"),
       requireValue(config.oilVariantId, "oilVariantId"),
     ];
+
+    // Future deliveries repeat only the five haircare products.
+    // The scalp massager belongs to the initial delivery only.
+    futureReservationVariantIds = [...variantIds];
 
     if (config.massagerVariantId) {
       variantIds.push(config.massagerVariantId);
@@ -245,6 +251,27 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   } else {
     console.log(
       `Initial inventory already processed for ${contractId}`,
+    );
+  }
+
+  if (
+    planType === COMPLETE.code &&
+    futureReservationVariantIds.length > 0
+  ) {
+    const reservationResult =
+      await reserveCompleteFutureInventory({
+        graphql: admin.graphql,
+        shop,
+        contractId,
+        planType,
+        locationId: config.locationId,
+        variantIds: futureReservationVariantIds,
+        unitsPerVariant: COMPLETE.maxCycles - 1,
+      });
+
+    console.log(
+      `Future inventory reservation reconciled for ${contractId}`,
+      reservationResult,
     );
   }
 

@@ -3,7 +3,7 @@ import type { ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { assertBillableCycle, COMPLETE, SERUM, isCompleteAfterSuccess } from "../domain/subscription-policy";
-import { deductVariantInventory } from "../services/inventory.server";
+import { consumeCompleteReservedInventory } from "../services/program-inventory-consumption.server";
 
 type BillingSuccessPayload = {
   idempotency_key?: string;
@@ -216,16 +216,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return new Response();
   }
 
-  const inventoryIdempotencyKey = `inventory:${billingKey}`;
-
-  if (variantIds.length > 0) {
-    await deductVariantInventory({
+  if (planType === COMPLETE.code) {
+    await consumeCompleteReservedInventory({
       graphql: admin.graphql,
-      variantIds,
+      contractId,
       locationId: config.locationId,
-      idempotencyKey: inventoryIdempotencyKey,
-      referenceDocumentUri:
-        `lushka://subscription/${contractId.split("/").pop()}/cycle/${cycleIndex}`,
+      variantIds,
+      cycleIndex,
     });
   }
 
