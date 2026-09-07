@@ -352,4 +352,176 @@ describe("subscription billing success webhook safety", () => {
     });
   });
 
+
+  it("processes Serum Ritual payment #2 with serum inventory only", async () => {
+    inventoryFindUnique.mockResolvedValue(null);
+
+    const config = {
+      locationId: "gid://shopify/Location/1",
+      completeSellingPlanId: "gid://shopify/SellingPlan/complete",
+      serumSellingPlanId: "gid://shopify/SellingPlan/serum",
+      serumVariantId: "gid://shopify/ProductVariant/serum",
+      shampooVariantId: "gid://shopify/ProductVariant/shampoo",
+      conditionerVariantId: "gid://shopify/ProductVariant/conditioner",
+      maskVariantId: "gid://shopify/ProductVariant/mask",
+      oilVariantId: "gid://shopify/ProductVariant/oil",
+      massagerVariantId: "gid://shopify/ProductVariant/massager",
+    };
+
+    shopConfigFindUnique.mockResolvedValue(config);
+
+    adminGraphqlMock.mockResolvedValue({
+      json: async () => ({
+        data: {
+          subscriptionContract: {
+            id: contractId,
+            nextBillingDate: "2026-11-07T00:00:00.000Z",
+            lines: {
+              nodes: [
+                {
+                  sellingPlanId: config.serumSellingPlanId,
+                  variantId: config.serumVariantId,
+                  quantity: 1,
+                },
+              ],
+            },
+          },
+        },
+      }),
+    });
+
+    contractStateFindUnique.mockResolvedValue({
+      contractId,
+      successfulCycleCount: 1,
+      nextBillingAt: new Date("2026-10-07T00:00:00.000Z"),
+    });
+
+    const response = await action({
+      request: new Request("https://example.com/webhook", {
+        method: "POST",
+      }),
+    } as any);
+
+    expect(response.status).toBe(200);
+
+    expect(deductInventoryMock).toHaveBeenCalledWith({
+      graphql: adminGraphqlMock,
+      variantIds: [
+        config.serumVariantId,
+      ],
+      locationId: config.locationId,
+      idempotencyKey: `inventory:${billingKey}`,
+      referenceDocumentUri: "lushka://subscription/123/cycle/1",
+    });
+
+    expect(contractStateUpdate).toHaveBeenCalledWith({
+      where: {
+        contractId,
+      },
+      data: {
+        successfulCycleCount: 2,
+        lastSuccessfulCycle: 1,
+        lastOrderId: orderId,
+        status: "ACTIVE",
+        completedAt: null,
+        nextBillingAt: new Date("2026-11-07T00:00:00.000Z"),
+      },
+    });
+  });
+
+  it("completes Serum Ritual after payment #3 with serum inventory only", async () => {
+    const cycleTwoBillingKey = `lushka:${contractId}:cycle:2`;
+
+    authenticateWebhookMock.mockResolvedValue({
+      admin: {
+        graphql: adminGraphqlMock,
+      },
+      payload: {
+        idempotency_key: cycleTwoBillingKey,
+        admin_graphql_api_order_id: orderId,
+        admin_graphql_api_subscription_contract_id: contractId,
+        ready: true,
+      },
+      shop,
+      topic: "SUBSCRIPTION_BILLING_ATTEMPTS_SUCCESS",
+      session: {
+        id: "offline_b0z0gt-be.myshopify.com",
+      },
+    });
+
+    inventoryFindUnique.mockResolvedValue(null);
+
+    const config = {
+      locationId: "gid://shopify/Location/1",
+      completeSellingPlanId: "gid://shopify/SellingPlan/complete",
+      serumSellingPlanId: "gid://shopify/SellingPlan/serum",
+      serumVariantId: "gid://shopify/ProductVariant/serum",
+      shampooVariantId: "gid://shopify/ProductVariant/shampoo",
+      conditionerVariantId: "gid://shopify/ProductVariant/conditioner",
+      maskVariantId: "gid://shopify/ProductVariant/mask",
+      oilVariantId: "gid://shopify/ProductVariant/oil",
+      massagerVariantId: "gid://shopify/ProductVariant/massager",
+    };
+
+    shopConfigFindUnique.mockResolvedValue(config);
+
+    adminGraphqlMock.mockResolvedValue({
+      json: async () => ({
+        data: {
+          subscriptionContract: {
+            id: contractId,
+            nextBillingDate: "2026-12-07T00:00:00.000Z",
+            lines: {
+              nodes: [
+                {
+                  sellingPlanId: config.serumSellingPlanId,
+                  variantId: config.serumVariantId,
+                  quantity: 1,
+                },
+              ],
+            },
+          },
+        },
+      }),
+    });
+
+    contractStateFindUnique.mockResolvedValue({
+      contractId,
+      successfulCycleCount: 2,
+      nextBillingAt: new Date("2026-11-07T00:00:00.000Z"),
+    });
+
+    const response = await action({
+      request: new Request("https://example.com/webhook", {
+        method: "POST",
+      }),
+    } as any);
+
+    expect(response.status).toBe(200);
+
+    expect(deductInventoryMock).toHaveBeenCalledWith({
+      graphql: adminGraphqlMock,
+      variantIds: [
+        config.serumVariantId,
+      ],
+      locationId: config.locationId,
+      idempotencyKey: `inventory:${cycleTwoBillingKey}`,
+      referenceDocumentUri: "lushka://subscription/123/cycle/2",
+    });
+
+    expect(contractStateUpdate).toHaveBeenCalledWith({
+      where: {
+        contractId,
+      },
+      data: {
+        successfulCycleCount: 3,
+        lastSuccessfulCycle: 2,
+        lastOrderId: orderId,
+        status: "COMPLETED",
+        completedAt: expect.any(Date),
+        nextBillingAt: null,
+      },
+    });
+  });
+
 });

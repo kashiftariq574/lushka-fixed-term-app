@@ -187,4 +187,61 @@ describe("subscription contract create webhook safety", () => {
     expect(deductInventoryMock).not.toHaveBeenCalled();
     expect(inventoryUpsert).not.toHaveBeenCalled();
   });
+
+  it("processes Serum Ritual initial inventory with serum only", async () => {
+    adminGraphqlMock.mockResolvedValue({
+      json: async () => ({
+        data: {
+          subscriptionContract: {
+            id: contractId,
+            status: "ACTIVE",
+            nextBillingDate: "2026-10-07T00:00:00.000Z",
+            customer: {
+              id: "gid://shopify/Customer/789",
+            },
+            lines: {
+              nodes: [
+                {
+                  sellingPlanId: config.serumSellingPlanId,
+                  quantity: 1,
+                },
+              ],
+            },
+          },
+        },
+      }),
+    });
+
+    const response = await action({
+      request: new Request("https://example.com/webhook", {
+        method: "POST",
+      }),
+    } as any);
+
+    expect(response.status).toBe(200);
+
+    expect(deductInventoryMock).toHaveBeenCalledWith({
+      graphql: adminGraphqlMock,
+      variantIds: [
+        config.serumVariantId,
+      ],
+      locationId: config.locationId,
+      idempotencyKey: `inventory:initial:${contractId}`,
+      referenceDocumentUri: "lushka://subscription/123/initial",
+    });
+
+    expect(inventoryUpsert).toHaveBeenCalledWith({
+      where: {
+        idempotencyKey: `initial:${contractId}`,
+      },
+      update: {},
+      create: {
+        shop,
+        orderId: originOrderId,
+        planType: "SERUM_RITUAL_90",
+        idempotencyKey: `initial:${contractId}`,
+      },
+    });
+  });
+
 });
