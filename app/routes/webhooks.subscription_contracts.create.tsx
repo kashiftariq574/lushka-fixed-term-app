@@ -20,10 +20,6 @@ const CONTRACT_QUERY = `#graphql
       status
       nextBillingDate
 
-      customer {
-        id
-      }
-
       lines(first: 10) {
         nodes {
           sellingPlanId
@@ -174,9 +170,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   const customerId =
-    contract.customer?.id ??
-    webhook.admin_graphql_api_customer_id ??
-    null;
+    webhook.admin_graphql_api_customer_id ?? null;
 
   const nextBillingAt = contract.nextBillingDate
     ? new Date(contract.nextBillingDate)
