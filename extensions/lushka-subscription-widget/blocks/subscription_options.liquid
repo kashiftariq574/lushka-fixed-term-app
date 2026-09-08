@@ -138,36 +138,67 @@
         }
 
         function syncSellingPlan() {
-          const form = getProductForm();
+          selectAndHideNativePurchaseOptions();
 
-          if (!form) return;
-
-          form
-            .querySelectorAll(
-              'input[name="selling_plan"]:not([data-lushka-generated])'
-            )
-            .forEach((input) => {
-              input.disabled = true;
-            });
-
-          let sellingPlanInput = form.querySelector(
-            'input[data-lushka-generated="true"]'
+          const section = getSection();
+          const forms = section.querySelectorAll(
+            'form[action*="/cart/add"]'
           );
 
-          if (!sellingPlanInput) {
-            sellingPlanInput = document.createElement('input');
-            sellingPlanInput.type = 'hidden';
-            sellingPlanInput.name = 'selling_plan';
-            sellingPlanInput.dataset.lushkaGenerated = 'true';
-            form.appendChild(sellingPlanInput);
-          }
+          forms.forEach((form) => {
+            let inputs = form.querySelectorAll(
+              'input[name="selling_plan"]'
+            );
 
-          sellingPlanInput.disabled = false;
-          sellingPlanInput.value = sellingPlanId;
+            if (inputs.length === 0) {
+              const input = document.createElement('input');
+              input.type = 'hidden';
+              input.name = 'selling_plan';
+              input.dataset.lushkaGenerated = 'true';
+              form.appendChild(input);
 
-          selectAndHideNativePurchaseOptions();
+              inputs = form.querySelectorAll(
+                'input[name="selling_plan"]'
+              );
+            }
+
+            inputs.forEach((input) => {
+              input.disabled = false;
+              input.value = sellingPlanId;
+            });
+          });
+
           updateDisplayedPrice();
         }
+
+        document.addEventListener(
+          'submit',
+          (event) => {
+            const form = event.target;
+
+            if (
+              !(form instanceof HTMLFormElement) ||
+              !form.matches('form[action*="/cart/add"]')
+            ) {
+              return;
+            }
+
+            let input = form.querySelector(
+              'input[name="selling_plan"]'
+            );
+
+            if (!input) {
+              input = document.createElement('input');
+              input.type = 'hidden';
+              input.name = 'selling_plan';
+              form.appendChild(input);
+            }
+
+            input.disabled = false;
+            input.value = sellingPlanId;
+          },
+          true
+        );
 
         syncSellingPlan();
 
