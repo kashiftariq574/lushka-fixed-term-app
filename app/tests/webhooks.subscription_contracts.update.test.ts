@@ -1,15 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ActionFunctionArgs } from "react-router";
 
 const {
   authenticateWebhookMock,
   adminGraphqlMock,
   contractStateFindUnique,
   contractStateUpdate,
+  shopConfigFindUnique,
+  releaseCompleteRemainingInventoryMock,
 } = vi.hoisted(() => ({
   authenticateWebhookMock: vi.fn(),
   adminGraphqlMock: vi.fn(),
   contractStateFindUnique: vi.fn(),
   contractStateUpdate: vi.fn(),
+  shopConfigFindUnique: vi.fn(),
+  releaseCompleteRemainingInventoryMock: vi.fn(),
 }));
 
 vi.mock("../shopify.server", () => ({
@@ -24,10 +29,19 @@ vi.mock("../db.server", () => ({
       findUnique: contractStateFindUnique,
       update: contractStateUpdate,
     },
+    shopConfig: {
+      findUnique: shopConfigFindUnique,
+    },
   },
 }));
 
+vi.mock("../services/program-inventory-release.server", () => ({
+  releaseCompleteRemainingInventory:
+    releaseCompleteRemainingInventoryMock,
+}));
+
 import { action } from "../routes/webhooks.subscription_contracts.update";
+import { COMPLETE, SERUM } from "../domain/subscription-policy";
 
 const shop = "b0z0gt-be.myshopify.com";
 const contractId = "gid://shopify/SubscriptionContract/123";
@@ -67,6 +81,18 @@ describe("subscription contract update webhook safety", () => {
     vi.clearAllMocks();
     mockWebhook();
     contractStateUpdate.mockResolvedValue({});
+    releaseCompleteRemainingInventoryMock.mockResolvedValue({
+      released: 5,
+      skipped: 0,
+    });
+
+    shopConfigFindUnique.mockResolvedValue({
+      serumVariantId: "gid://shopify/ProductVariant/serum",
+      shampooVariantId: "gid://shopify/ProductVariant/shampoo",
+      conditionerVariantId: "gid://shopify/ProductVariant/conditioner",
+      maskVariantId: "gid://shopify/ProductVariant/mask",
+      oilVariantId: "gid://shopify/ProductVariant/oil",
+    });
   });
 
   it("never revives a locally completed fixed-term contract", async () => {
@@ -81,7 +107,7 @@ describe("subscription contract update webhook safety", () => {
       request: new Request("https://example.com/webhook", {
         method: "POST",
       }),
-    } as any);
+    } as unknown as ActionFunctionArgs);
 
     expect(response.status).toBe(200);
     expect(adminGraphqlMock).not.toHaveBeenCalled();
@@ -100,16 +126,17 @@ describe("subscription contract update webhook safety", () => {
       request: new Request("https://example.com/webhook", {
         method: "POST",
       }),
-    } as any);
+    } as unknown as ActionFunctionArgs);
 
     expect(response.status).toBe(200);
     expect(contractStateUpdate).not.toHaveBeenCalled();
   });
 
-  it("marks a cancelled Shopify contract terminal and clears billing", async () => {
+  it("releases Complete reserved stock before marking a cancelled contract terminal", async () => {
     contractStateFindUnique.mockResolvedValue({
       contractId,
       status: "ACTIVE",
+      planType: COMPLETE.code,
     });
 
     mockShopifyContract("CANCELLED");
@@ -118,9 +145,36 @@ describe("subscription contract update webhook safety", () => {
       request: new Request("https://example.com/webhook", {
         method: "POST",
       }),
-    } as any);
+    } as unknown as ActionFunctionArgs);
 
     expect(response.status).toBe(200);
+
+    expect(shopConfigFindUnique).toHaveBeenCalledWith({
+      where: {
+        shop,
+      },
+    });
+
+    expect(
+      releaseCompleteRemainingInventoryMock,
+    ).toHaveBeenCalledWith({
+      graphql: adminGraphqlMock,
+      contractId,
+      variantIds: [
+        "gid://shopify/ProductVariant/serum",
+        "gid://shopify/ProductVariant/shampoo",
+        "gid://shopify/ProductVariant/conditioner",
+        "gid://shopify/ProductVariant/mask",
+        "gid://shopify/ProductVariant/oil",
+      ],
+      reason: "contract-terminal",
+    });
+
+    expect(
+      releaseCompleteRemainingInventoryMock.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      contractStateUpdate.mock.invocationCallOrder[0],
+    );
 
     expect(contractStateUpdate).toHaveBeenCalledWith({
       where: {
@@ -131,6 +185,101 @@ describe("subscription contract update webhook safety", () => {
         nextBillingAt: null,
       },
     });
+  });
+
+  it("releases Complete reserved stock before marking an expired contract terminal", async () => {
+    contractStateFindUnique.mockResolvedValue({
+      contractId,
+      status: "ACTIVE",
+      planType: COMPLETE.code,
+    });
+
+    mockShopifyContract("EXPIRED", null);
+
+    const response = await action({
+      request: new Request("https://example.com/webhook", {
+        method: "POST",
+      }),
+    } as unknown as ActionFunctionArgs);
+
+    expect(response.status).toBe(200);
+
+    expect(
+      releaseCompleteRemainingInventoryMock,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contractId,
+        reason: "contract-terminal",
+      }),
+    );
+
+    expect(contractStateUpdate).toHaveBeenCalledWith({
+      where: {
+        contractId,
+      },
+      data: {
+        status: "EXPIRED",
+        nextBillingAt: null,
+      },
+    });
+  });
+
+  it("does not manually release inventory for a terminal Serum contract", async () => {
+    contractStateFindUnique.mockResolvedValue({
+      contractId,
+      status: "ACTIVE",
+      planType: SERUM.code,
+    });
+
+    mockShopifyContract("CANCELLED", null);
+
+    const response = await action({
+      request: new Request("https://example.com/webhook", {
+        method: "POST",
+      }),
+    } as unknown as ActionFunctionArgs);
+
+    expect(response.status).toBe(200);
+
+    expect(shopConfigFindUnique).not.toHaveBeenCalled();
+
+    expect(
+      releaseCompleteRemainingInventoryMock,
+    ).not.toHaveBeenCalled();
+
+    expect(contractStateUpdate).toHaveBeenCalledWith({
+      where: {
+        contractId,
+      },
+      data: {
+        status: "CANCELLED",
+        nextBillingAt: null,
+      },
+    });
+  });
+
+  it("does not mark a Complete contract terminal when reserved stock release fails", async () => {
+    contractStateFindUnique.mockResolvedValue({
+      contractId,
+      status: "ACTIVE",
+      planType: COMPLETE.code,
+    });
+
+    mockShopifyContract("CANCELLED", null);
+
+    releaseCompleteRemainingInventoryMock.mockRejectedValue(
+      new Error("Shopify inventory release failed"),
+    );
+
+    const response = await action({
+      request: new Request("https://example.com/webhook", {
+        method: "POST",
+      }),
+    } as unknown as ActionFunctionArgs);
+
+    expect(response.status).toBe(500);
+
+    expect(contractStateUpdate).not.toHaveBeenCalled();
   });
 
   it("pauses local renewals when Shopify contract is PAUSED", async () => {
@@ -145,7 +294,7 @@ describe("subscription contract update webhook safety", () => {
       request: new Request("https://example.com/webhook", {
         method: "POST",
       }),
-    } as any);
+    } as unknown as ActionFunctionArgs);
 
     expect(response.status).toBe(200);
 
@@ -172,7 +321,7 @@ describe("subscription contract update webhook safety", () => {
       request: new Request("https://example.com/webhook", {
         method: "POST",
       }),
-    } as any);
+    } as unknown as ActionFunctionArgs);
 
     expect(response.status).toBe(200);
 
@@ -200,7 +349,7 @@ describe("subscription contract update webhook safety", () => {
       request: new Request("https://example.com/webhook", {
         method: "POST",
       }),
-    } as any);
+    } as unknown as ActionFunctionArgs);
 
     expect(response.status).toBe(200);
 

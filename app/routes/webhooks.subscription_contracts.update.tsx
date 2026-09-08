@@ -1,10 +1,25 @@
 import type { ActionFunctionArgs } from "react-router";
 
 import db from "../db.server";
+import { COMPLETE, SERUM } from "../domain/subscription-policy";
+import {
+  releaseCompleteRemainingInventory,
+} from "../services/program-inventory-release.server";
 import { authenticate } from "../shopify.server";
 
 type ContractUpdatePayload = {
   admin_graphql_api_id?: string;
+};
+
+type ContractStatusResponse = {
+  data?: {
+    subscriptionContract?: {
+      id?: string;
+      status?: string | null;
+      nextBillingDate?: string | null;
+    } | null;
+  };
+  errors?: unknown[];
 };
 
 const CONTRACT_STATUS_QUERY = `#graphql
@@ -21,6 +36,30 @@ const TERMINAL_STATUSES = new Set([
   "CANCELLED",
   "EXPIRED",
 ]);
+
+function completeVariantIds(config: {
+  serumVariantId?: string | null;
+  shampooVariantId?: string | null;
+  conditionerVariantId?: string | null;
+  maskVariantId?: string | null;
+  oilVariantId?: string | null;
+}): string[] {
+  const variantIds = [
+    config.serumVariantId,
+    config.shampooVariantId,
+    config.conditionerVariantId,
+    config.maskVariantId,
+    config.oilVariantId,
+  ];
+
+  if (variantIds.some((id) => !id)) {
+    throw new Error(
+      "Complete programme inventory configuration is incomplete",
+    );
+  }
+
+  return variantIds as string[];
+}
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin, payload, shop, topic } =
@@ -74,7 +113,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     },
   });
 
-  const json: any = await response.json();
+  const json = (await response.json()) as ContractStatusResponse;
 
   if (json.errors?.length) {
     console.error(json.errors);
@@ -128,6 +167,43 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   if (TERMINAL_STATUSES.has(shopifyStatus)) {
+    try {
+      if (localState.planType === COMPLETE.code) {
+        const config = await db.shopConfig.findUnique({
+          where: {
+            shop,
+          },
+        });
+
+        if (!config) {
+          throw new Error(
+            "Complete programme inventory configuration is incomplete",
+          );
+        }
+
+        await releaseCompleteRemainingInventory({
+          graphql: admin.graphql,
+          contractId,
+          variantIds: completeVariantIds(config),
+          reason: "contract-terminal",
+        });
+      } else if (localState.planType !== SERUM.code) {
+        throw new Error(
+          `Unsupported subscription plan type: ${localState.planType}`,
+        );
+      }
+    } catch (error) {
+      console.error(
+        `Failed to release terminal programme inventory for ${contractId}`,
+        error,
+      );
+
+      return new Response(
+        "Unable to release terminal programme inventory",
+        { status: 500 },
+      );
+    }
+
     await db.contractState.update({
       where: {
         contractId,
