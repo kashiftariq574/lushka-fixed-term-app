@@ -126,13 +126,49 @@
           );
         }
 
+        function hideNativePurchaseOptions() {
+          const form = getProductForm();
+
+          if (!form) return;
+
+          const radios = form.querySelectorAll('input[type="radio"]');
+
+          radios.forEach((radio) => {
+            const wrapper =
+              radio.closest('label') ||
+              radio.closest('fieldset') ||
+              radio.parentElement;
+
+            const text = (wrapper?.textContent || '').toLowerCase();
+
+            if (
+              text.includes('one-time purchase') ||
+              text.includes('one time purchase') ||
+              text.includes('complete haircare recovery 90') ||
+              text.includes('serum ritual 90')
+            ) {
+              if (wrapper) {
+                wrapper.style.display = 'none';
+              }
+            }
+          });
+        }
+
         function syncSellingPlan() {
           const form = getProductForm();
 
           if (!form) return;
 
+          form
+            .querySelectorAll(
+              'input[name="selling_plan"]:not([data-lushka-generated])'
+            )
+            .forEach((input) => {
+              input.disabled = true;
+            });
+
           let sellingPlanInput = form.querySelector(
-            'input[name="selling_plan"]'
+            'input[data-lushka-generated="true"]'
           );
 
           if (!sellingPlanInput) {
@@ -145,9 +181,14 @@
 
           sellingPlanInput.disabled = false;
           sellingPlanInput.value = sellingPlanId;
+
+          hideNativePurchaseOptions();
         }
 
         syncSellingPlan();
+
+        setTimeout(syncSellingPlan, 250);
+        setTimeout(syncSellingPlan, 750);
 
         document.addEventListener('shopify:section:load', syncSellingPlan);
       })();
