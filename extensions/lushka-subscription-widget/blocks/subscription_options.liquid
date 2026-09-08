@@ -1,7 +1,9 @@
 {% if product != blank %}
   {% assign current_variant = product.selected_or_first_available_variant %}
+
   {% for candidate_allocation in current_variant.selling_plan_allocations %}
     {% assign candidate_plan = candidate_allocation.selling_plan %}
+
     {% if candidate_plan.name == 'Complete Haircare Recovery 90' or candidate_plan.name == 'Serum Ritual 90' %}
       {% assign allocation = candidate_allocation %}
       {% break %}
@@ -15,67 +17,36 @@
     <div
       id="lushka-subscription-{{ block.id }}"
       class="lushka-subscription-options"
+      data-selling-plan-id="{{ plan.id }}"
       {{ block.shopify_attributes }}
     >
       <div class="lushka-subscription-heading">
         {{ block.settings.heading }}
       </div>
 
-      <label class="lushka-purchase-option">
-        <span class="lushka-option-radio">
-          <input
-            type="radio"
-            name="lushka_purchase_option_{{ block.id }}"
-            value="one_time"
-            data-lushka-option
-            data-selling-plan-id=""
-            checked
-          >
-        </span>
+      <div class="lushka-programme-card">
+        <div class="lushka-programme-title">
+          {{ plan.name }}
+        </div>
 
-        <span class="lushka-option-content">
-          <span class="lushka-option-title">One-time purchase</span>
-          <span class="lushka-option-price">
-            {{ current_variant.price | money_with_currency }}
-          </span>
-        </span>
-      </label>
+        <div class="lushka-programme-price">
+          {{ allocation.price | money_with_currency }}
+          <span class="lushka-programme-frequency">/ month</span>
+        </div>
 
-      <label class="lushka-purchase-option lushka-subscription-choice">
-        <span class="lushka-option-radio">
-          <input
-            type="radio"
-            name="lushka_purchase_option_{{ block.id }}"
-            value="subscription"
-            data-lushka-option
-            data-selling-plan-id="{{ plan.id }}"
-          >
-        </span>
+        {% if adjustment.value_type == 'percentage' %}
+          <div class="lushka-programme-saving">
+            Save {{ adjustment.value | round }}%
+          </div>
+        {% endif %}
 
-        <span class="lushka-option-content">
-          <span class="lushka-option-title">
-            Subscribe &amp; save
-            {% if adjustment.value_type == 'percentage' %}
-              {{ adjustment.value | round }}%
-            {% endif %}
-          </span>
-
-          <span class="lushka-option-price">
-            {{ allocation.price | money_with_currency }}
-          </span>
-
-          <span class="lushka-option-description">
-            Monthly payment · 3 payments total
-          </span>
-
-          <span class="lushka-option-plan">
-            {{ plan.name }}
-          </span>
-        </span>
-      </label>
+        <div class="lushka-programme-description">
+          3 monthly payments total
+        </div>
+      </div>
 
       <div class="lushka-fixed-term-note">
-        No ongoing subscription after the third payment.
+        Fixed 3-month programme. No further subscription payment after the third payment.
       </div>
     </div>
 
@@ -88,48 +59,45 @@
       #lushka-subscription-{{ block.id }} .lushka-subscription-heading {
         font-size: 16px;
         font-weight: 600;
-        margin-bottom: 12px;
+        margin-bottom: 10px;
       }
 
-      #lushka-subscription-{{ block.id }} .lushka-purchase-option {
-        display: flex;
-        gap: 12px;
-        align-items: flex-start;
-        padding: 14px 16px;
-        margin-bottom: 10px;
+      #lushka-subscription-{{ block.id }} .lushka-programme-card {
+        padding: 16px;
         border: 1px solid rgba(0, 0, 0, 0.18);
         border-radius: 8px;
-        cursor: pointer;
       }
 
-      #lushka-subscription-{{ block.id }} .lushka-purchase-option:has(input:checked) {
-        border: 2pxsolid currentColor;
+      #lushka-subscription-{{ block.id }} .lushka-programme-title {
+        font-weight: 600;
+        margin-bottom: 6px;
       }
 
-      #lushka-subscription-{{ block.id }} .lushka-option-radio {
-        padding-top: 2px;
-      }
-
-      #lushka-subscription-{{ block.id }} .lushka-option-content {
-        display: flex;
-        flex-direction: column;
-        flex: 1;
-        gap: 3px;
-      }
-
-      #lushka-subscription-{{ block.id }} .lushka-option-title {
+      #lushka-subscription-{{ block.id }} .lushka-programme-price {
+        font-size: 18px;
         font-weight: 600;
       }
 
-      #lushka-subscription-{{ block.id }} .lushka-option-price {
-        font-size: 15px;
+      #lushka-subscription-{{ block.id }} .lushka-programme-frequency {
+        font-size: 13px;
+        font-weight: 400;
+        opacity: 0.75;
       }
 
-      #lushka-subscription-{{ block.id }} .lushka-option-description,
-      #lushka-subscription-{{ block.id }} .lushka-option-plan,
+      #lushka-subscription-{{ block.id }} .lushka-programme-saving {
+        margin-top: 5px;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      #lushka-subscription-{{ block.id }} .lushka-programme-description,
       #lushka-subscription-{{ block.id }} .lushka-fixed-term-note {
         font-size: 13px;
         opacity: 0.75;
+      }
+
+      #lushka-subscription-{{ block.id }} .lushka-programme-description {
+        margin-top: 5px;
       }
 
       #lushka-subscription-{{ block.id }} .lushka-fixed-term-note {
@@ -145,6 +113,10 @@
 
         if (!root) return;
 
+        const sellingPlanId = root.dataset.sellingPlanId;
+
+        if (!sellingPlanId) return;
+
         function getProductForm() {
           const section = root.closest('.shopify-section');
 
@@ -159,41 +131,25 @@
 
           if (!form) return;
 
-          const selected = root.querySelector(
-            'input[data-lushka-option]:checked'
-          );
-
-          const sellingPlanId =
-            selected?.dataset.sellingPlanId || '';
-
           let sellingPlanInput = form.querySelector(
             'input[name="selling_plan"]'
           );
 
-          if (sellingPlanId) {
-            if (!sellingPlanInput) {
-              sellingPlanInput = document.createElement('input');
-              sellingPlanInput.type = 'hidden';
-              sellingPlanInput.name = 'selling_plan';
-              sellingPlanInput.dataset.lushkaGenerated = 'true';
-              form.appendChild(sellingPlanInput);
-            }
-
-            sellingPlanInput.disabled = false;
-            sellingPlanInput.value = sellingPlanId;
-          } else if (sellingPlanInput) {
-            sellingPlanInput.value = '';
-            sellingPlanInput.disabled = true;
+          if (!sellingPlanInput) {
+            sellingPlanInput = document.createElement('input');
+            sellingPlanInput.type = 'hidden';
+            sellingPlanInput.name = 'selling_plan';
+            sellingPlanInput.dataset.lushkaGenerated = 'true';
+            form.appendChild(sellingPlanInput);
           }
+
+          sellingPlanInput.disabled = false;
+          sellingPlanInput.value = sellingPlanId;
         }
 
-        root.addEventListener('change', (event) => {
-          if (event.target.matches('input[data-lushka-option]')) {
-            syncSellingPlan();
-          }
-        });
-
         syncSellingPlan();
+
+        document.addEventListener('shopify:section:load', syncSellingPlan);
       })();
     </script>
   {% endif %}
@@ -208,7 +164,7 @@
       "type": "text",
       "id": "heading",
       "label": "Heading",
-      "default": "Choose your purchase option"
+      "default": "Your 3-month programme"
     }
   ]
 }
