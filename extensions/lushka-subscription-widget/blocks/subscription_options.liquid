@@ -52,32 +52,61 @@
           );
         }
 
-        function hideNativePurchaseOptions() {
+        function selectAndHideNativePurchaseOptions() {
           const section = getSection();
+          const radios = section.querySelectorAll('input[type="radio"]');
 
-          section
-            .querySelectorAll('input[type="radio"]')
-            .forEach((radio) => {
-              const wrapper =
-                radio.closest('label') ||
-                radio.closest('fieldset') ||
-                radio.parentElement;
+          radios.forEach((radio) => {
+            const wrapper =
+              radio.closest('label') ||
+              radio.closest('fieldset') ||
+              radio.parentElement;
 
-              const text = (wrapper?.textContent || '').toLowerCase();
+            const text = (wrapper?.textContent || '').toLowerCase();
+            const value = String(radio.value || '');
+            const radioPlanId =
+              radio.dataset.sellingPlanId ||
+              radio.dataset.sellingPlan ||
+              '';
 
-              if (
-                text.includes('one-time purchase') ||
-                text.includes('one time purchase') ||
-                text.includes('complete haircare recovery 90') ||
-                text.includes('serum ritual 90')
-              ) {
-                if (wrapper) {
-                  wrapper.style.display = 'none';
-                }
+            const isSubscription =
+              value === sellingPlanId ||
+              radioPlanId === sellingPlanId ||
+              (
+                !text.includes('one-time purchase') &&
+                !text.includes('one time purchase') &&
+                (
+                  text.includes('complete haircare recovery 90') ||
+                  text.includes('serum ritual 90')
+                )
+              );
 
-                radio.disabled = true;
+            const isOneTime =
+              text.includes('one-time purchase') ||
+              text.includes('one time purchase');
+
+            if (isSubscription) {
+              radio.disabled = false;
+
+              if (!radio.checked) {
+                radio.checked = true;
+                radio.dispatchEvent(
+                  new Event('input', { bubbles: true })
+                );
+                radio.dispatchEvent(
+                  new Event('change', { bubbles: true })
+                );
               }
-            });
+            } else if (isOneTime) {
+              radio.checked = false;
+            }
+
+            if (isSubscription || isOneTime) {
+              if (wrapper) {
+                wrapper.style.display = 'none';
+              }
+            }
+          });
         }
 
         function updateDisplayedPrice() {
@@ -136,7 +165,7 @@
           sellingPlanInput.disabled = false;
           sellingPlanInput.value = sellingPlanId;
 
-          hideNativePurchaseOptions();
+          selectAndHideNativePurchaseOptions();
           updateDisplayedPrice();
         }
 
