@@ -323,6 +323,50 @@ export async function releaseVariantUnits({
 }
 
 
+
+export async function releaseReservedVariantUnits({
+  graphql,
+  inventoryItemId,
+  locationId,
+  quantityToRelease,
+  reservedLedgerDocumentUri,
+  referenceDocumentUri,
+  idempotencyKey,
+}: {
+  graphql: AdminGraphql;
+  inventoryItemId: string;
+  locationId: string;
+  quantityToRelease: number;
+  reservedLedgerDocumentUri: string;
+  referenceDocumentUri: string;
+  idempotencyKey: string;
+}) {
+  /*
+   * Intentionally no inventory preflight read.
+   *
+   * Payment-hold expiry may be retried after a worker crash.
+   * Replaying the same Shopify mutation with the same idempotency key
+   * must remain safe even if Shopify already performed the release.
+   */
+  return moveInventory({
+    graphql,
+    inventoryItemId,
+    locationId,
+    quantityToMove: quantityToRelease,
+    fromName: "reserved",
+    toName: "available",
+    fromQuantity: null,
+    toQuantity: null,
+    fromLedgerDocumentUri: reservedLedgerDocumentUri,
+    toLedgerDocumentUri: null,
+    reason: "reservation_deleted",
+    referenceDocumentUri,
+    idempotencyKey,
+  });
+}
+
+
+
 export async function releaseReservedVariantUnitForConsumption({
   graphql,
   inventoryItemId,

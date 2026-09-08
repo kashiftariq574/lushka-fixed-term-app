@@ -1,5 +1,6 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { processDueRenewals } from "../services/renewals.server";
+import { processExpiredPaymentHolds } from "../services/payment-holds.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const expectedSecret = process.env.CRON_SECRET;
@@ -22,10 +23,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }
 
   try {
+    const paymentHolds =
+      await processExpiredPaymentHolds();
+
     const result = await processDueRenewals();
 
     return Response.json({
       ok: true,
+      paymentHolds,
       ...result,
     });
   } catch (error) {

@@ -246,4 +246,99 @@ describe("reserveCompleteFutureInventory", () => {
       }),
     );
   });
+
+  it("does not re-reserve a consumed programme reservation", async () => {
+    const variantId = variantIds[0];
+
+    reservationFindMany.mockResolvedValue([
+      {
+        contractId,
+        variantId,
+        status: "CONSUMED",
+        reservationAttempt: 1,
+      },
+    ]);
+
+    const result = await reserveCompleteFutureInventory({
+      graphql: vi.fn(),
+      shop,
+      contractId,
+      planType,
+      locationId,
+      variantIds: [variantId],
+      unitsPerVariant: 2,
+    });
+
+    expect(result).toEqual({
+      reserved: 0,
+      skipped: 1,
+    });
+
+    expect(getVariantInventoryStateMock).not.toHaveBeenCalled();
+    expect(reserveVariantUnitsMock).not.toHaveBeenCalled();
+    expect(reservationUpsert).not.toHaveBeenCalled();
+  });
+
+  it("blocks automatic reservation when manual recovery is required", async () => {
+    const variantId = variantIds[0];
+
+    reservationFindMany.mockResolvedValue([
+      {
+        contractId,
+        variantId,
+        status: "RECOVERY_REQUIRED",
+        reservationAttempt: 1,
+      },
+    ]);
+
+    await expect(
+      reserveCompleteFutureInventory({
+        graphql: vi.fn(),
+        shop,
+        contractId,
+        planType,
+        locationId,
+        variantIds: [variantId],
+        unitsPerVariant: 2,
+      }),
+    ).rejects.toThrow(
+      "Programme inventory requires manual recovery",
+    );
+
+    expect(getVariantInventoryStateMock).not.toHaveBeenCalled();
+    expect(reserveVariantUnitsMock).not.toHaveBeenCalled();
+    expect(reservationUpsert).not.toHaveBeenCalled();
+  });
+
+  it("does not automatically re-reserve released programme inventory", async () => {
+    const variantId = variantIds[0];
+
+    reservationFindMany.mockResolvedValue([
+      {
+        contractId,
+        variantId,
+        status: "RELEASED",
+        reservationAttempt: 1,
+      },
+    ]);
+
+    await expect(
+      reserveCompleteFutureInventory({
+        graphql: vi.fn(),
+        shop,
+        contractId,
+        planType,
+        locationId,
+        variantIds: [variantId],
+        unitsPerVariant: 2,
+      }),
+    ).rejects.toThrow(
+      "Programme inventory reservation has been released",
+    );
+
+    expect(getVariantInventoryStateMock).not.toHaveBeenCalled();
+    expect(reserveVariantUnitsMock).not.toHaveBeenCalled();
+    expect(reservationUpsert).not.toHaveBeenCalled();
+  });
+
 });

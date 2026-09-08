@@ -90,17 +90,62 @@ export async function reserveCompleteFutureInventory({
   );
 
   /*
-   * Only an ACTIVE reservation means the future stock is currently
-   * protected. ROLLED_BACK rows must be attempted again.
+   * Reservation status safety:
+   *
+   * ACTIVE:
+   *   Future stock is already protected, so skip it.
+   *
+   * CONSUMED:
+   *   The programme reservation obligation is finished. Never reserve
+   *   it again because a duplicate contract-create webhook may arrive
+   *   long after the subscription has completed.
+   *
+   * ROLLED_BACK:
+   *   The previous reservation attempt was compensated successfully,
+   *   so this is the only status that may automatically retry.
+   *
+   * RECOVERY_REQUIRED:
+   *   Inventory state is uncertain and requires manual reconciliation.
+   *
+   * RELEASED:
+   *   Stock was intentionally returned to available inventory. It must
+   *   not be automatically reserved again without an explicit resume
+   *   workflow.
    */
-  const activeVariantIds = new Set(
+  for (const row of existing) {
+    if (row.status === "RECOVERY_REQUIRED") {
+      throw new Error(
+        "Programme inventory requires manual recovery",
+      );
+    }
+
+    if (row.status === "RELEASED") {
+      throw new Error(
+        "Programme inventory reservation has been released",
+      );
+    }
+
+    if (
+      !["ACTIVE", "CONSUMED", "ROLLED_BACK"].includes(row.status)
+    ) {
+      throw new Error(
+        `Unsupported programme inventory reservation status: ${row.status}`,
+      );
+    }
+  }
+
+  const protectedVariantIds = new Set(
     existing
-      .filter((row) => row.status === "ACTIVE")
+      .filter(
+        (row) =>
+          row.status === "ACTIVE" ||
+          row.status === "CONSUMED",
+      )
       .map((row) => row.variantId),
   );
 
   const variantsToReserve = uniqueVariantIds.filter(
-    (variantId) => !activeVariantIds.has(variantId),
+    (variantId) => !protectedVariantIds.has(variantId),
   );
 
   if (variantsToReserve.length === 0) {
@@ -249,6 +294,6 @@ export async function reserveCompleteFutureInventory({
 
   return {
     reserved: completedReservations.length,
-    skipped: activeVariantIds.size,
+    skipped: protectedVariantIds.size,
   };
 }

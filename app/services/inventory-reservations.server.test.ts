@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getVariantInventoryState,
   releaseReservedVariantUnitForConsumption,
+  releaseReservedVariantUnits,
   releaseVariantUnits,
   reserveVariantUnits,
 } from "./inventory-reservations.server";
@@ -374,6 +375,62 @@ describe("releaseReservedVariantUnitForConsumption", () => {
         changes: [
           {
             quantity: 1,
+            inventoryItemId,
+            from: {
+              locationId,
+              name: "reserved",
+              ledgerDocumentUri:
+                "lushka://subscription/123/future-reservation",
+              changeFromQuantity: null,
+            },
+            to: {
+              locationId,
+              name: "available",
+              ledgerDocumentUri: null,
+              changeFromQuantity: null,
+            },
+          },
+        ],
+      },
+    });
+  });
+});
+
+describe("releaseReservedVariantUnits", () => {
+  it("releases remaining reserved units without a preflight read", async () => {
+    const graphql = vi.fn();
+
+    graphql.mockResolvedValue(moveSuccessResponse());
+
+    await releaseReservedVariantUnits({
+      graphql,
+      inventoryItemId,
+      locationId,
+      quantityToRelease: 2,
+      reservedLedgerDocumentUri:
+        "lushka://subscription/123/future-reservation",
+      referenceDocumentUri:
+        "lushka://subscription/123/payment-hold-expiry",
+      idempotencyKey:
+        "hold-release:123:serum",
+    });
+
+    // The same deterministic Shopify mutation must be safe to replay
+    // after a worker crash, so no inventory preflight read occurs.
+    expect(graphql).toHaveBeenCalledTimes(1);
+
+    const mutationCall = graphql.mock.calls[0][1];
+
+    expect(mutationCall.variables).toEqual({
+      idempotencyKey:
+        "hold-release:123:serum",
+      input: {
+        reason: "reservation_deleted",
+        referenceDocumentUri:
+          "lushka://subscription/123/payment-hold-expiry",
+        changes: [
+          {
+            quantity: 2,
             inventoryItemId,
             from: {
               locationId,

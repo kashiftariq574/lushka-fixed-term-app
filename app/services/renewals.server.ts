@@ -82,12 +82,33 @@ export async function processDueRenewals(now = new Date()) {
 
     if (latestAttempt?.status === "FAILED") {
       if (hasReachedMaxAttempts(attempts.length)) {
+        const paymentHoldUntil = new Date(
+          now.getTime() + 72 * 60 * 60 * 1000,
+        );
+
+        const holdUpdate =
+          await prisma.contractState.updateMany({
+            where: {
+              id: contractState.id,
+              status: "ACTIVE",
+            },
+            data: {
+              status: "PAYMENT_HOLD",
+              paymentHoldStartedAt: now,
+              paymentHoldUntil,
+            },
+          });
+
         results.push({
           contractId: contractState.contractId,
           cycleIndex,
           skipped: true,
-          reason: "Maximum billing attempts reached for this cycle",
+          reason:
+            holdUpdate.count > 0
+              ? "Payment moved to 72-hour hold after maximum attempts"
+              : "Payment hold already applied by another worker",
         });
+
         continue;
       }
 

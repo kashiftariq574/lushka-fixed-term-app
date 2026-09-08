@@ -6,6 +6,7 @@ const {
   billingCreate,
   billingUpdateMany,
   contractUpdate,
+  contractUpdateMany,
   adminMock,
   createBillingAttemptMock,
 } = vi.hoisted(() => ({
@@ -14,6 +15,7 @@ const {
   billingCreate: vi.fn(),
   billingUpdateMany: vi.fn(),
   contractUpdate: vi.fn(),
+  contractUpdateMany: vi.fn(),
   adminMock: vi.fn(),
   createBillingAttemptMock: vi.fn(),
 }));
@@ -23,6 +25,7 @@ vi.mock("../db.server", () => ({
     contractState: {
       findMany: contractFindMany,
       update: contractUpdate,
+      updateMany: contractUpdateMany,
     },
     billingAttempt: {
       findMany: billingFindMany,
@@ -121,19 +124,38 @@ describe("processDueRenewals safety skips", () => {
     expect(createBillingAttemptMock).not.toHaveBeenCalled();
   });
 
-  it("stops after 3 failed attempts for the same cycle", async () => {
+  it("moves the contract into a 72-hour payment hold after 3 failed attempts", async () => {
     billingFindMany.mockResolvedValue([
       { ...attempt("FAILED"), id: "attempt-3", attemptCount: 3 },
       { ...attempt("FAILED"), id: "attempt-2", attemptCount: 2 },
       { ...attempt("FAILED"), id: "attempt-1", attemptCount: 1 },
     ]);
 
+    contractUpdateMany.mockResolvedValue({ count: 1 });
+
     const result = await processDueRenewals(now);
+
+    const paymentHoldUntil = new Date(
+      now.getTime() + 72 * 60 * 60 * 1000,
+    );
+
+    expect(contractUpdateMany).toHaveBeenCalledWith({
+      where: {
+        id: contract.id,
+        status: "ACTIVE",
+      },
+      data: {
+        status: "PAYMENT_HOLD",
+        paymentHoldStartedAt: now,
+        paymentHoldUntil,
+      },
+    });
 
     expect(result.results[0]).toMatchObject({
       skipped: true,
-      reason: "Maximum billing attempts reached for this cycle",
+      reason: "Payment moved to 72-hour hold after maximum attempts",
     });
+
     expect(billingCreate).not.toHaveBeenCalled();
     expect(createBillingAttemptMock).not.toHaveBeenCalled();
   });
