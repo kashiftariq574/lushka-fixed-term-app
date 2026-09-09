@@ -35,6 +35,14 @@ export type ReviewOrder = {
   name: string;
   email?: string | null;
 
+  day14ReviewBridge: {
+    handle: string | null;
+    email: string | null;
+    orderNumber: string | null;
+    product: string | null;
+    review: string | null;
+  };
+
   cancelledAt?: string | null;
   displayFinancialStatus?: string | null;
   displayFulfillmentStatus: string;
@@ -63,6 +71,22 @@ type OrderQueryResponse = {
       id: string;
       name: string;
       email?: string | null;
+
+      day14Handle?: {
+        value?: string | null;
+      } | null;
+      day14Email?: {
+        value?: string | null;
+      } | null;
+      day14OrderNumber?: {
+        value?: string | null;
+      } | null;
+      day14Product?: {
+        value?: string | null;
+      } | null;
+      day14Review?: {
+        value?: string | null;
+      } | null;
 
       cancelledAt?: string | null;
       displayFinancialStatus?: string | null;
@@ -100,6 +124,41 @@ const REVIEW_ORDER_QUERY = `#graphql
       id
       name
       email
+
+      day14Handle: metafield(
+        namespace: "lushka_review"
+        key: "day14_handle"
+      ) {
+        value
+      }
+
+      day14Email: metafield(
+        namespace: "lushka_review"
+        key: "day14_email"
+      ) {
+        value
+      }
+
+      day14OrderNumber: metafield(
+        namespace: "lushka_review"
+        key: "day14_order_number"
+      ) {
+        value
+      }
+
+      day14Product: metafield(
+        namespace: "lushka_review"
+        key: "day14_product"
+      ) {
+        value
+      }
+
+      day14Review: metafield(
+        namespace: "lushka_review"
+        key: "day14_review"
+      ) {
+        value
+      }
 
       cancelledAt
       displayFinancialStatus
@@ -194,6 +253,24 @@ export async function getReviewOrder({
     id: order.id,
     name: order.name,
     email: order.email ?? null,
+
+    day14ReviewBridge: {
+      handle:
+        order.day14Handle?.value?.trim() ||
+        null,
+      email:
+        order.day14Email?.value?.trim() ||
+        null,
+      orderNumber:
+        order.day14OrderNumber?.value?.trim() ||
+        null,
+      product:
+        order.day14Product?.value?.trim() ||
+        null,
+      review:
+        order.day14Review?.value?.trim() ||
+        null,
+    },
 
     cancelledAt: order.cancelledAt ?? null,
     displayFinancialStatus:

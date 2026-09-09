@@ -2,6 +2,7 @@ import type { ActionFunctionArgs } from "react-router";
 
 import { authenticate } from "../shopify.server";
 import { getReviewOrder } from "../services/review-order.server";
+import { buildDay14ReviewSubmissionFromOrder } from "../services/review-order-submission.server";
 import { validateReviewEmailEligibility } from "../services/review-email-eligibility.server";
 import {
   findReviewFormDefinition,
@@ -534,19 +535,42 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       "metaobjectHandle" in signal
     ) {
       try {
-        const definition =
-          await findReviewFormDefinition({
-            graphql: admin.graphql,
-            name: reviewFormName,
-            handle: signal.metaobjectHandle,
-          });
+        let submission;
+        let submissionSourceType: string;
 
-        const submission =
-          await getReviewFormSubmission({
-            graphql: admin.graphql,
-            type: definition.type,
-            handle: signal.metaobjectHandle,
-          });
+        if (
+          signal.type ===
+          "DAY_14_REVIEW_REWARD"
+        ) {
+          submission =
+            buildDay14ReviewSubmissionFromOrder({
+              order,
+              expectedHandle:
+                signal.metaobjectHandle,
+            });
+
+          submissionSourceType =
+            submission.type;
+        } else {
+          const definition =
+            await findReviewFormDefinition({
+              graphql: admin.graphql,
+              name: reviewFormName,
+              handle:
+                signal.metaobjectHandle,
+            });
+
+          submission =
+            await getReviewFormSubmission({
+              graphql: admin.graphql,
+              type: definition.type,
+              handle:
+                signal.metaobjectHandle,
+            });
+
+          submissionSourceType =
+            definition.type;
+        }
 
         const submittedEmail =
           reviewFormFieldValue(submission, [
@@ -575,7 +599,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             orderName: order.name,
             signalType: signal.type,
             formName: reviewFormName,
-            metaobjectType: definition.type,
+            metaobjectType:
+              submissionSourceType,
             metaobjectHandle:
               signal.metaobjectHandle,
             fieldKeys:

@@ -203,6 +203,17 @@ const order = {
   id: orderId,
   name: "#1001",
   email: "customer@example.com",
+
+  day14ReviewBridge: {
+    handle: "form-abc",
+    email: "customer@example.com",
+    orderNumber: "1001",
+    product:
+      "Multi-Peptide Hair Growth Serum",
+    review:
+      "Really enjoying the product.",
+  },
+
   cancelledAt: null,
   displayFinancialStatus: "PAID",
   displayFulfillmentStatus: "FULFILLED",

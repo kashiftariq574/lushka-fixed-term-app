@@ -13,7 +13,11 @@ import {
   createOrGetReviewRewardDiscount,
 } from "../services/review-discount.server";
 import { reviewSignalFinalState } from "../services/review-signal-state.server";
-import { findReviewFormDefinition } from "../services/review-form-submission.server";
+import {
+  findReviewFormDefinition,
+  reviewFormFieldValue,
+} from "../services/review-form-submission.server";
+import { buildDay14ReviewSubmissionFromOrder } from "../services/review-order-submission.server";
 
 function makeOrder(
   overrides: Partial<ReviewOrder> = {},
@@ -22,6 +26,13 @@ function makeOrder(
     id: "gid://shopify/Order/123",
     name: "#1001",
     email: "customer@example.com",
+    day14ReviewBridge: {
+      handle: null,
+      email: null,
+      orderNumber: null,
+      product: null,
+      review: null,
+    },
     cancelledAt: null,
     displayFinancialStatus: "PAID",
     displayFulfillmentStatus: "FULFILLED",
@@ -780,6 +791,104 @@ describe("Shopify Forms definition lookup", () => {
 
       expect(definition.name).toBe(
         "Shopify Forms submission",
+      );
+    },
+  );
+});
+
+describe("day-14 order metafield review bridge", () => {
+  it(
+    "builds a review submission only for the exact READY handle",
+    () => {
+      const submission =
+        buildDay14ReviewSubmissionFromOrder({
+          order: {
+            id:
+              "gid://shopify/Order/456",
+            name: "#1001",
+            email:
+              "customer@example.com",
+            day14ReviewBridge: {
+              handle: "form-abc",
+              email:
+                "customer@example.com",
+              orderNumber: "1001",
+              product:
+                "Multi-Peptide Hair Growth Serum",
+              review:
+                "Really enjoying the product.",
+            },
+            cancelledAt: null,
+            displayFinancialStatus:
+              "PAID",
+            displayFulfillmentStatus:
+              "FULFILLED",
+            returnStatus: "NO_RETURN",
+            tags: [],
+            customer: null,
+            lineItems: [],
+          },
+          expectedHandle: "form-abc",
+        });
+
+      expect(submission.handle).toBe(
+        "form-abc",
+      );
+
+      expect(
+        reviewFormFieldValue(
+          submission,
+          ["Email"],
+        ),
+      ).toBe(
+        "customer@example.com",
+      );
+
+      expect(
+        reviewFormFieldValue(
+          submission,
+          ["Review"],
+        ),
+      ).toBe(
+        "Really enjoying the product.",
+      );
+    },
+  );
+
+  it(
+    "rejects a stale Day-14 bridge handle",
+    () => {
+      expect(() =>
+        buildDay14ReviewSubmissionFromOrder({
+          order: {
+            id:
+              "gid://shopify/Order/456",
+            name: "#1001",
+            email:
+              "customer@example.com",
+            day14ReviewBridge: {
+              handle: "old-form",
+              email:
+                "customer@example.com",
+              orderNumber: "1001",
+              product:
+                "Multi-Peptide Hair Growth Serum",
+              review: "Review text",
+            },
+            cancelledAt: null,
+            displayFinancialStatus:
+              "PAID",
+            displayFulfillmentStatus:
+              "FULFILLED",
+            returnStatus: "NO_RETURN",
+            tags: [],
+            customer: null,
+            lineItems: [],
+          },
+          expectedHandle: "new-form",
+        }),
+      ).toThrow(
+        "does not match the READY signal",
       );
     },
   );
