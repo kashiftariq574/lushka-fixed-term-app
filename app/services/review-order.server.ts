@@ -1,0 +1,234 @@
+type AdminGraphql = (
+  query: string,
+  options?: {
+    variables?: Record<string, unknown>;
+  },
+) => Promise<Response>;
+
+export type ReviewOrderLineItem = {
+  id: string;
+  name: string;
+  quantity: number;
+  image: {
+    url: string;
+    altText?: string | null;
+  } | null;
+  product: {
+    id: string;
+    title: string;
+  } | null;
+  variant: {
+    id: string;
+    title: string;
+  } | null;
+  lineItemGroup: {
+    id: string;
+    title: string;
+    quantity: number;
+    productId?: string | null;
+    variantId?: string | null;
+  } | null;
+};
+
+export type ReviewOrder = {
+  id: string;
+  name: string;
+  email?: string | null;
+
+  cancelledAt?: string | null;
+  displayFinancialStatus?: string | null;
+  displayFulfillmentStatus: string;
+  returnStatus: string;
+
+  tags: string[];
+
+  customer: {
+    id: string;
+    firstName?: string | null;
+    lastName?: string | null;
+
+    defaultEmailAddress: {
+      emailAddress: string;
+      marketingState: string;
+      marketingUnsubscribeUrl: string;
+    } | null;
+  } | null;
+
+  lineItems: ReviewOrderLineItem[];
+};
+
+type OrderQueryResponse = {
+  data?: {
+    order?: {
+      id: string;
+      name: string;
+      email?: string | null;
+
+      cancelledAt?: string | null;
+      displayFinancialStatus?: string | null;
+      displayFulfillmentStatus: string;
+      returnStatus: string;
+
+      tags: string[];
+
+      customer?: {
+        id: string;
+        firstName?: string | null;
+        lastName?: string | null;
+
+        defaultEmailAddress?: {
+          emailAddress: string;
+          marketingState: string;
+          marketingUnsubscribeUrl: string;
+        } | null;
+      } | null;
+
+      lineItems: {
+        nodes: ReviewOrderLineItem[];
+      };
+    } | null;
+  };
+
+  errors?: Array<{
+    message?: string;
+  }>;
+};
+
+const REVIEW_ORDER_QUERY = `#graphql
+  query ReviewOrder($id: ID!) {
+    order(id: $id) {
+      id
+      name
+      email
+
+      cancelledAt
+      displayFinancialStatus
+      displayFulfillmentStatus
+      returnStatus
+
+      tags
+
+      customer {
+        id
+        firstName
+        lastName
+
+        defaultEmailAddress {
+          emailAddress
+          marketingState
+          marketingUnsubscribeUrl
+        }
+      }
+
+      lineItems(first: 100) {
+        nodes {
+          id
+          name
+          quantity
+
+          image {
+            url
+            altText
+          }
+
+          product {
+            id
+            title
+          }
+
+          variant {
+            id
+            title
+          }
+
+          lineItemGroup {
+            id
+            title
+            quantity
+            productId
+            variantId
+          }
+        }
+      }
+    }
+  }
+`;
+
+export async function getReviewOrder({
+  graphql,
+  orderId,
+}: {
+  graphql: AdminGraphql;
+  orderId: string;
+}): Promise<ReviewOrder> {
+  const response = await graphql(REVIEW_ORDER_QUERY, {
+    variables: {
+      id: orderId,
+    },
+  });
+
+  const json = (await response.json()) as OrderQueryResponse;
+
+  if (json.errors?.length) {
+    const message = json.errors
+      .map((error) => error.message)
+      .filter(Boolean)
+      .join("; ");
+
+    throw new Error(
+      `Unable to read review order ${orderId}: ${
+        message || "Shopify GraphQL error"
+      }`,
+    );
+  }
+
+  const order = json.data?.order;
+
+  if (!order) {
+    throw new Error(
+      `Review order not found: ${orderId}`,
+    );
+  }
+
+  return {
+    id: order.id,
+    name: order.name,
+    email: order.email ?? null,
+
+    cancelledAt: order.cancelledAt ?? null,
+    displayFinancialStatus:
+      order.displayFinancialStatus ?? null,
+    displayFulfillmentStatus:
+      order.displayFulfillmentStatus,
+    returnStatus: order.returnStatus,
+
+    tags: order.tags,
+
+    customer: order.customer
+      ? {
+          id: order.customer.id,
+          firstName:
+            order.customer.firstName ?? null,
+          lastName:
+            order.customer.lastName ?? null,
+
+          defaultEmailAddress:
+            order.customer.defaultEmailAddress
+              ? {
+                  emailAddress:
+                    order.customer.defaultEmailAddress
+                      .emailAddress,
+                  marketingState:
+                    order.customer.defaultEmailAddress
+                      .marketingState,
+                  marketingUnsubscribeUrl:
+                    order.customer.defaultEmailAddress
+                      .marketingUnsubscribeUrl,
+                }
+              : null,
+        }
+      : null,
+
+    lineItems: order.lineItems.nodes,
+  };
+}

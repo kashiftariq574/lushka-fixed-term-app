@@ -222,3 +222,60 @@ model EmailEvent {
   @@index([status])
   @@index([dueAt])
 }
+
+model ReviewSignalEvent {
+  id String @id @default(cuid())
+
+  shop       String
+  orderId    String
+  signalType String
+  readyTag   String
+
+  // Unique logical action. Duplicate Shopify webhooks for the same
+  // order/signal must resolve to this same record.
+  signalKey String @unique
+
+  // Present only for Shopify Forms reward signals.
+  metaobjectHandle String?
+
+  /**
+   * Lifecycle examples:
+   * PENDING
+   * PROCESSING
+   * COMPLETED
+   * REJECTED
+   * RETRYABLE
+   */
+  status String @default("PENDING")
+
+  attemptCount Int @default(0)
+
+  // Used as a processing lease so a crashed PROCESSING job can
+  // safely become eligible for retry after a timeout.
+  processingStartedAt DateTime?
+
+  // Reward signals may create a deterministic discount before email.
+  // Persist it so retries do not create a second discount.
+  discountCode String?
+
+  // Only one valid reward may be granted for an order/reward stage.
+  // Nullable so request signals and unvalidated form signals do not
+  // participate in the uniqueness constraint.
+  rewardKey String? @unique
+
+  // Resend provider message id after successful delivery.
+  providerMessageId String?
+
+  lastError String?
+
+  emailSentAt DateTime?
+  processedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shop, orderId])
+  @@index([shop, status])
+  @@index([status])
+  @@index([processingStartedAt])
+}
