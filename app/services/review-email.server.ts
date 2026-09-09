@@ -1,4 +1,4 @@
-import { Resend } from "resend";
+import { createHash } from "node:crypto";
 
 export type ReviewEmailType =
   | "DAY_14_REVIEW_REQUEST"
@@ -590,68 +590,165 @@ function getReviewEmailContent(
   }
 }
 
+function brevoIdempotencyUuid(
+  value: string,
+): string {
+  const bytes = createHash("sha256")
+    .update(value)
+    .digest()
+    .subarray(0, 16);
+
+  /*
+   * Produce a deterministic RFC-4122-compatible UUID so retries of
+   * the same review signal use the same Brevo idempotency key.
+   */
+  bytes[6] =
+    (bytes[6] & 0x0f) | 0x50;
+  bytes[8] =
+    (bytes[8] & 0x3f) | 0x80;
+
+  const hex = bytes.toString("hex");
+
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20, 32),
+  ].join("-");
+}
+
+type BrevoSendResponse = {
+  messageId?: string;
+  messageIds?: string[];
+  code?: string;
+  message?: string;
+};
+
 export async function sendReviewEmail(
   input: SendReviewEmailInput,
 ) {
   const apiKey =
-    process.env.RESEND_API_KEY;
+    process.env.BREVO_API_KEY?.trim();
 
-  const from =
-    process.env.EMAIL_FROM;
+  const fromName =
+    process.env.REVIEW_EMAIL_FROM_NAME?.trim();
+
+  const fromAddress =
+    process.env.REVIEW_EMAIL_FROM_ADDRESS?.trim();
 
   const replyTo =
-    process.env.EMAIL_REPLY_TO;
+    process.env.REVIEW_EMAIL_REPLY_TO?.trim();
 
   if (!apiKey) {
     throw new Error(
-      "RESEND_API_KEY is not configured",
+      "BREVO_API_KEY is not configured",
     );
   }
 
-  if (!from) {
+  if (!fromName) {
     throw new Error(
-      "EMAIL_FROM is not configured",
+      "REVIEW_EMAIL_FROM_NAME is not configured",
     );
   }
 
-  if (!input.to.trim()) {
+  if (!fromAddress) {
+    throw new Error(
+      "REVIEW_EMAIL_FROM_ADDRESS is not configured",
+    );
+  }
+
+  const recipient =
+    input.to.trim();
+
+  if (!recipient) {
     throw new Error(
       "Review email recipient is required",
     );
   }
 
-  const resend = new Resend(apiKey);
-
   const content =
     getReviewEmailContent(input);
 
-  const result =
-    await resend.emails.send(
-      {
-        from,
-        to: input.to.trim(),
+  const response = await fetch(
+    "https://api.brevo.com/v3/smtp/email",
+    {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "api-key": apiKey,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        sender: {
+          name: fromName,
+          email: fromAddress,
+        },
+        to: [
+          {
+            email: recipient,
+          },
+        ],
         subject: content.subject,
-        html: content.html,
+        htmlContent: content.html,
+        /*
+         * Brevo supports Idempotency-Key as a custom transactional
+         * email header. The webhook/database layer remains the primary
+         * durable idempotency guard; this adds provider-side protection
+         * around retries.
+         */
+        headers: {
+          idempotencyKey:
+            brevoIdempotencyUuid(
+              input.idempotencyKey,
+            ),
+        },
         ...(replyTo
           ? {
-              replyTo,
+              replyTo: {
+                email: replyTo,
+              },
             }
           : {}),
-      },
-      {
-        idempotencyKey:
-          input.idempotencyKey,
-      },
-    );
+      }),
+    },
+  );
 
-  if (result.error) {
+  const rawBody =
+    await response.text();
+
+  let result: BrevoSendResponse = {};
+
+  if (rawBody) {
+    try {
+      result =
+        JSON.parse(
+          rawBody,
+        ) as BrevoSendResponse;
+    } catch {
+      if (!response.ok) {
+        throw new Error(
+          `Brevo review email failed (${response.status})`,
+        );
+      }
+    }
+  }
+
+  if (!response.ok) {
+    const detail =
+      result.message?.trim() ||
+      response.statusText ||
+      "Unknown Brevo error";
+
     throw new Error(
-      `Resend review email failed: ${result.error.message}`,
+      `Brevo review email failed (${response.status}): ${detail}`,
     );
   }
 
   return {
     providerMessageId:
-      result.data?.id ?? null,
+      result.messageId ??
+      result.messageIds?.[0] ??
+      null,
   };
 }
