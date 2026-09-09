@@ -81,13 +81,13 @@ const DAY_28_REVIEW_PHOTOS_REQUEST =
   "lushka-app-28-review-photos-request-ready";
 
 const DAY_14_REVIEW_REWARD_PREFIX =
-  "lushka-app-14-review-ready-";
+  "r14-";
 
 const DAY_28_REVIEW_PHOTOS_REWARD_PREFIX =
-  "lushka-app-28-review-photos-ready-";
+  "r28-";
 
 const DAY_28_PHOTOS_ONLY_REWARD_PREFIX =
-  "lushka-app-28-photos-only-ready-";
+  "p28-";
 
 function reviewEmailTypeForSignal(
   signal: ReadySignal,

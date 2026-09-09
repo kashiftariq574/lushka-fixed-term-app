@@ -121,7 +121,7 @@ describe("review email eligibility", () => {
   it("does not require marketing subscription for reward delivery", () => {
     const order = makeOrder({
       tags: [
-        "lushka-app-14-review-ready-form-abc",
+        "r14-form-abc",
       ],
       customer: {
         ...makeOrder().customer!,
@@ -138,7 +138,7 @@ describe("review email eligibility", () => {
       validateReviewEmailEligibility({
         order,
         readyTag:
-          "lushka-app-14-review-ready-form-abc",
+          "r14-form-abc",
         requireMarketingSubscription: false,
       });
 

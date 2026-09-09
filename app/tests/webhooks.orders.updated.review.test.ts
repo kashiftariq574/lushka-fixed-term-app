@@ -194,10 +194,10 @@ const requestReadyTag =
   "lushka-app-14-review-request-ready";
 
 const rewardReadyTag =
-  "lushka-app-14-review-ready-form-abc";
+  "r14-form-abc";
 
 const day28RewardReadyTag =
-  "lushka-app-28-review-photos-ready-form-xyz";
+  "r28-form-xyz";
 
 const order = {
   id: orderId,
