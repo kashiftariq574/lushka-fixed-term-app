@@ -13,6 +13,7 @@ import {
   createOrGetReviewRewardDiscount,
 } from "../services/review-discount.server";
 import { reviewSignalFinalState } from "../services/review-signal-state.server";
+import { findReviewFormDefinition } from "../services/review-form-submission.server";
 
 function makeOrder(
   overrides: Partial<ReviewOrder> = {},
@@ -660,3 +661,127 @@ describe("review final-state tags", () => {
     ]);
   });
 });
+
+describe("Shopify Forms definition lookup", () => {
+  it(
+    "finds generated Shopify Forms definition from exact submission handle",
+    async () => {
+      const generatedType =
+        "app--6171699--shopify-forms1143887";
+
+      const graphql = async (
+        query: string,
+      ): Promise<Response> => {
+        if (
+          query.includes(
+            "ReviewFormDefinitions",
+          )
+        ) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                metaobjectDefinitions: {
+                  nodes: [
+                    {
+                      id:
+                        "gid://shopify/MetaobjectDefinition/1",
+                      name:
+                        "Shopify Forms submission",
+                      type: generatedType,
+                      fieldDefinitions: [
+                        {
+                          key:
+                            "form_display_name",
+                          name:
+                            "Form display name",
+                          type: {
+                            name:
+                              "single_line_text_field",
+                          },
+                        },
+                        {
+                          key: "email",
+                          name: "Email",
+                          type: {
+                            name:
+                              "single_line_text_field",
+                          },
+                        },
+                      ],
+                    },
+                  ],
+                  pageInfo: {
+                    hasNextPage: false,
+                    endCursor: null,
+                  },
+                },
+              },
+            }),
+          );
+        }
+
+        if (
+          query.includes(
+            "ReviewFormSubmission",
+          )
+        ) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                metaobjectByHandle: {
+                  id:
+                    "gid://shopify/Metaobject/1",
+                  handle:
+                    "september-09-2026-at-12-48-20-543-pm",
+                  type: generatedType,
+                  fields: [
+                    {
+                      key:
+                        "form_display_name",
+                      value:
+                        "Lushka – 14 Day Review",
+                      jsonValue:
+                        "shka – 14 Day Review",
+                      definition: {
+                        key:
+                          "form_display_name",
+                        name:
+                          "Form display name",
+                        type: {
+                          name:
+                            "single_line_text_field",
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            }),
+          );
+        }
+
+        throw new Error(
+          "Unexpected GraphQL query",
+        );
+      };
+
+      const definition =
+        await findReviewFormDefinition({
+          graphql,
+          name:
+            "Lushka – 14 Day Review",
+          handle:
+            "september-09-2026-at-12-48-20-543-pm",
+        });
+
+      expect(definition.type).toBe(
+        generatedType,
+      );
+
+      expect(definition.name).toBe(
+        "Shopify Forms submission",
+      );
+    },
+  );
+});
+

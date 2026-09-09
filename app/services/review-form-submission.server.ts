@@ -157,9 +157,11 @@ function graphqlErrorMessage(
 export async function findReviewFormDefinition({
   graphql,
   name,
+  handle,
 }: {
   graphql: AdminGraphql;
   name: string;
+  handle?: string | null;
 }): Promise<ReviewFormDefinition> {
   let after: string | null = null;
 
@@ -208,6 +210,108 @@ export async function findReviewFormDefinition({
             type: field.type.name,
           })),
       };
+    }
+
+    /*
+     * Shopify Forms uses generated metaobject definition
+     * names/types, so the merchant-facing form name may
+     * not equal metaobjectDefinition.name.
+     *
+     * When we have the exact submission handle from Flow,
+     * probe Shopify Forms definitions for that handle and
+     * verify its stored form_display_name instead.
+     */
+    if (handle) {
+      for (const candidate of connection.nodes) {
+        const isShopifyFormsDefinition =
+          candidate.type
+            .toLowerCase()
+            .includes("shopify-forms") ||
+          candidate.fieldDefinitions.some(
+            (field) =>
+              normalizeFieldName(field.key) ===
+              "formdisplayname",
+          );
+
+        if (!isShopifyFormsDefinition) {
+          continue;
+        }
+
+        const submissionResponse =
+          await graphql(
+            SUBMISSION_QUERY,
+            {
+              variables: {
+                handle: {
+                  type: candidate.type,
+                  handle,
+                },
+              },
+            },
+          );
+
+        const submissionJson =
+          (await submissionResponse.json()) as SubmissionResponse;
+
+        if (submissionJson.errors?.length) {
+          throw new Error(
+            `Unable to inspect Shopify Forms submission ${handle}: ${graphqlErrorMessage(
+              submissionJson.errors,
+            )}`,
+          );
+        }
+
+        const submission =
+          submissionJson.data?.metaobjectByHandle;
+
+        if (!submission) {
+          continue;
+        }
+
+        const formDisplayNameField =
+          submission.fields.find((field) => {
+            const possibleNames = [
+              field.key,
+              field.definition?.key,
+              field.definition?.name,
+            ].filter(
+              (value): value is string =>
+                typeof value === "string",
+            );
+
+            return possibleNames.some(
+              (value) =>
+                normalizeFieldName(value) ===
+                "formdisplayname",
+            );
+          });
+
+        const formDisplayName =
+          formDisplayNameField?.value?.trim() ??
+          null;
+
+        if (
+          !formDisplayName ||
+          normalizeFieldName(formDisplayName) !==
+            normalizeFieldName(name)
+        ) {
+          continue;
+        }
+
+        return {
+          id: candidate.id,
+          name: candidate.name,
+          type: candidate.type,
+          fieldDefinitions:
+            candidate.fieldDefinitions.map(
+              (field) => ({
+                key: field.key,
+                name: field.name,
+                type: field.type.name,
+              }),
+            ),
+        };
+      }
     }
 
     if (!connection.pageInfo.hasNextPage) {

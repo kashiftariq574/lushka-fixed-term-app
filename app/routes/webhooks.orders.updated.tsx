@@ -538,6 +538,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           await findReviewFormDefinition({
             graphql: admin.graphql,
             name: reviewFormName,
+            handle: signal.metaobjectHandle,
           });
 
         const submission =
