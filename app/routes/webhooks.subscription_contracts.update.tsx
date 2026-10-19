@@ -1,10 +1,11 @@
 import type { ActionFunctionArgs } from "react-router";
 
 import db from "../db.server";
-import { COMPLETE, SERUM } from "../domain/subscription-policy";
+import { COMPLETE, ROOT_REVIVAL, SERUM } from "../domain/subscription-policy";
 import {
   releaseCompleteRemainingInventory,
 } from "../services/program-inventory-release.server";
+import { releaseSerumRemainingInventory } from "../services/serum-inventory-reservation.server";
 import { authenticate } from "../shopify.server";
 
 type ContractUpdatePayload = {
@@ -55,6 +56,26 @@ function completeVariantIds(config: {
   if (variantIds.some((id) => !id)) {
     throw new Error(
       "Complete programme inventory configuration is incomplete",
+    );
+  }
+
+  return variantIds as string[];
+}
+
+function rootRevivalVariantIds(config: {
+  serumVariantId?: string | null;
+  shampooVariantId?: string | null;
+  conditionerVariantId?: string | null;
+}): string[] {
+  const variantIds = [
+    config.serumVariantId,
+    config.shampooVariantId,
+    config.conditionerVariantId,
+  ];
+
+  if (variantIds.some((id) => !id)) {
+    throw new Error(
+      "Root Revival programme inventory configuration is incomplete",
     );
   }
 
@@ -187,7 +208,45 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           variantIds: completeVariantIds(config),
           reason: "contract-terminal",
         });
-      } else if (localState.planType !== SERUM.code) {
+      } else if (localState.planType === ROOT_REVIVAL.code) {
+        const config = await db.shopConfig.findUnique({
+          where: {
+            shop,
+          },
+        });
+
+        if (!config) {
+          throw new Error(
+            "Root Revival programme inventory configuration is incomplete",
+          );
+        }
+
+        await releaseCompleteRemainingInventory({
+          graphql: admin.graphql,
+          contractId,
+          variantIds: rootRevivalVariantIds(config),
+          reason: "contract-terminal",
+        });
+      } else if (localState.planType === SERUM.code) {
+        const config = await db.shopConfig.findUnique({
+          where: {
+            shop,
+          },
+        });
+
+        if (!config?.serumVariantId) {
+          throw new Error(
+            "Serum inventory configuration is incomplete",
+          );
+        }
+
+        await releaseSerumRemainingInventory({
+          graphql: admin.graphql,
+          contractId,
+          serumVariantId: config.serumVariantId,
+          reason: "contract-terminal",
+        });
+      } else {
         throw new Error(
           `Unsupported subscription plan type: ${localState.planType}`,
         );

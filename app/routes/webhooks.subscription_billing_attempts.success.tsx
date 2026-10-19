@@ -2,8 +2,9 @@ import type { ActionFunctionArgs } from "react-router";
 
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
-import { assertBillableCycle, COMPLETE, SERUM, isCompleteAfterSuccess } from "../domain/subscription-policy";
+import { assertBillableCycle, COMPLETE, ROOT_REVIVAL, SERUM, isCompleteAfterSuccess } from "../domain/subscription-policy";
 import { consumeCompleteReservedInventory } from "../services/program-inventory-consumption.server";
+import { markSerumReservedInventoryConsumed } from "../services/serum-inventory-reservation.server";
 
 type BillingSuccessPayload = {
   idempotency_key?: string;
@@ -132,7 +133,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const lushkaLines = lines.filter(
     (line: any) =>
       line?.sellingPlanId === config.completeSellingPlanId ||
-      line?.sellingPlanId === config.serumSellingPlanId,
+      line?.sellingPlanId === config.serumSellingPlanId ||
+      line?.sellingPlanId === config.rootRevival4WeekSellingPlanId ||
+      line?.sellingPlanId === config.rootRevival6WeekSellingPlanId ||
+      line?.sellingPlanId === config.rootRevival8WeekSellingPlanId,
   );
 
   if (
@@ -167,6 +171,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       requireValue(config.oilVariantId, "oilVariantId"),
     ];
 
+  } else if (
+    [
+      config.rootRevival4WeekSellingPlanId,
+      config.rootRevival6WeekSellingPlanId,
+      config.rootRevival8WeekSellingPlanId,
+    ].some((id) => id && sellingPlanIds.has(id))
+  ) {
+    planType = ROOT_REVIVAL.code;
+
+    variantIds = [
+      requireValue(config.serumVariantId, "serumVariantId"),
+      requireValue(config.shampooVariantId, "shampooVariantId"),
+      requireValue(config.conditionerVariantId, "conditionerVariantId"),
+    ];
   } else if (
     config.serumSellingPlanId &&
     sellingPlanIds.has(config.serumSellingPlanId)
@@ -216,7 +234,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return new Response();
   }
 
-  if (planType === COMPLETE.code) {
+  if (
+    planType === COMPLETE.code ||
+    planType === ROOT_REVIVAL.code
+  ) {
     await consumeCompleteReservedInventory({
       graphql: admin.graphql,
       contractId,
@@ -224,9 +245,39 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       variantIds,
       cycleIndex,
     });
+  } else if (planType === SERUM.code) {
+    await markSerumReservedInventoryConsumed({
+      contractId,
+      serumVariantId: requireValue(
+        config.serumVariantId,
+        "serumVariantId",
+      ),
+      cycleIndex,
+    });
   }
 
   const completed = isCompleteAfterSuccess(successfulCycleCount);
+
+  const acceleratedRenewalMinutes = Number(
+    process.env.LUSHKA_ACCELERATED_RENEWAL_MINUTES ?? "0",
+  );
+
+  const acceleratedTestCustomerId =
+    process.env.LUSHKA_ACCELERATED_TEST_CUSTOMER_ID?.trim() ?? "";
+
+  const acceleratedRenewalEnabled =
+    acceleratedTestCustomerId.length > 0 &&
+    contractState.customerId === acceleratedTestCustomerId &&
+    Number.isFinite(acceleratedRenewalMinutes) &&
+    acceleratedRenewalMinutes > 0;
+
+  const acceleratedNextBillingAt =
+    acceleratedRenewalEnabled
+      ? new Date(
+          Date.now() +
+            acceleratedRenewalMinutes * 60 * 1000,
+        )
+      : null;
 
   await db.contractState.update({
     where: {
@@ -240,9 +291,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       completedAt: completed ? new Date() : null,
       nextBillingAt: completed
         ? null
-        : contract?.nextBillingDate
-          ? new Date(contract.nextBillingDate)
-          : contractState.nextBillingAt,
+        : acceleratedNextBillingAt ??
+          (contract?.nextBillingDate
+            ? new Date(contract.nextBillingDate)
+            : contractState.nextBillingAt),
     },
   });
 

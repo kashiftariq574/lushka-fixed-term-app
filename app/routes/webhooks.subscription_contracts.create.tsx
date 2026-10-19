@@ -2,9 +2,10 @@ import type { ActionFunctionArgs } from "react-router";
 
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
-import { COMPLETE, SERUM } from "../domain/subscription-policy";
+import { COMPLETE, ROOT_REVIVAL, SERUM } from "../domain/subscription-policy";
 import { deductVariantInventory } from "../services/inventory.server";
 import { reserveCompleteFutureInventory } from "../services/program-inventory-reservations.server";
+import { scheduleLifecycleEmails, scheduleRootRevivalLifecycleEmails } from "../services/lifecycle-email-events.server";
 
 type ContractCreatePayload = {
   admin_graphql_api_id?: string;
@@ -18,7 +19,15 @@ const CONTRACT_QUERY = `#graphql
     subscriptionContract(id: $id) {
       id
       status
+      createdAt
       nextBillingDate
+
+      customer {
+        firstName
+        defaultEmailAddress {
+          emailAddress
+        }
+      }
 
       lines(first: 10) {
         nodes {
@@ -108,7 +117,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const lushkaLines = lines.filter(
     (line: any) =>
       line?.sellingPlanId === config.completeSellingPlanId ||
-      line?.sellingPlanId === config.serumSellingPlanId,
+      line?.sellingPlanId === config.serumSellingPlanId ||
+      line?.sellingPlanId === config.rootRevival4WeekSellingPlanId ||
+      line?.sellingPlanId === config.rootRevival6WeekSellingPlanId ||
+      line?.sellingPlanId === config.rootRevival8WeekSellingPlanId,
   );
 
   if (
@@ -129,6 +141,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   let planType: string;
   let variantIds: string[];
   let futureReservationVariantIds: string[] = [];
+  let rootRevivalIntervalWeeks: 4 | 6 | 8 | null = null;
 
   if (
     config.completeSellingPlanId &&
@@ -152,15 +165,57 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       variantIds.push(config.massagerVariantId);
     }
   } else if (
+    [
+      config.rootRevival4WeekSellingPlanId,
+      config.rootRevival6WeekSellingPlanId,
+      config.rootRevival8WeekSellingPlanId,
+    ].some((id) => id && sellingPlanIds.has(id))
+  ) {
+    planType = ROOT_REVIVAL.code;
+
+    if (
+      config.rootRevival4WeekSellingPlanId &&
+      sellingPlanIds.has(config.rootRevival4WeekSellingPlanId)
+    ) {
+      rootRevivalIntervalWeeks = 4;
+    } else if (
+      config.rootRevival6WeekSellingPlanId &&
+      sellingPlanIds.has(config.rootRevival6WeekSellingPlanId)
+    ) {
+      rootRevivalIntervalWeeks = 6;
+    } else if (
+      config.rootRevival8WeekSellingPlanId &&
+      sellingPlanIds.has(config.rootRevival8WeekSellingPlanId)
+    ) {
+      rootRevivalIntervalWeeks = 8;
+    }
+
+    variantIds = [
+      requireValue(config.serumVariantId, "serumVariantId"),
+      requireValue(config.shampooVariantId, "shampooVariantId"),
+      requireValue(config.conditionerVariantId, "conditionerVariantId"),
+    ];
+
+    futureReservationVariantIds = [...variantIds];
+  } else if (
     config.serumSellingPlanId &&
     sellingPlanIds.has(config.serumSellingPlanId)
   ) {
     planType = SERUM.code;
 
-    // Serum Ritual uses the real Shopify serum variant.
-    // Shopify decrements that variant inventory on the actual order,
-    // so the app must not manually decrement it again.
+    // Serum Ritual subscription only.
+    // One-time Serum product purchases never create a subscription
+    // contract, so they never enter this path. Shopify's native
+    // inventory flow decrements available stock for those orders.
+    //
+    // For SERUM_RITUAL_90, Shopify already consumed the first unit on
+    // checkout, so the app must not manually deduct again.
     variantIds = [];
+
+    // Hold aside the two remaining Serum units for payment #2 and #3.
+    futureReservationVariantIds = [
+      requireValue(config.serumVariantId, "serumVariantId"),
+    ];
   } else {
     console.error(
       `Ignoring unknown subscription plan for contract ${contractId}`,
@@ -172,9 +227,29 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const customerId =
     webhook.admin_graphql_api_customer_id ?? null;
 
-  const nextBillingAt = contract.nextBillingDate
+  const shopifyNextBillingAt = contract.nextBillingDate
     ? new Date(contract.nextBillingDate)
     : null;
+
+  const acceleratedRenewalMinutes = Number(
+    process.env.LUSHKA_ACCELERATED_RENEWAL_MINUTES ?? "0",
+  );
+
+  const acceleratedTestCustomerId =
+    process.env.LUSHKA_ACCELERATED_TEST_CUSTOMER_ID?.trim() ?? "";
+
+  const acceleratedRenewalEnabled =
+    acceleratedTestCustomerId.length > 0 &&
+    customerId === acceleratedTestCustomerId &&
+    Number.isFinite(acceleratedRenewalMinutes) &&
+    acceleratedRenewalMinutes > 0;
+
+  const nextBillingAt = acceleratedRenewalEnabled
+    ? new Date(
+        Date.now() +
+          acceleratedRenewalMinutes * 60 * 1000,
+      )
+    : shopifyNextBillingAt;
 
   await db.contractState.upsert({
     where: {
@@ -249,9 +324,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   if (
-    planType === COMPLETE.code &&
+    (planType === COMPLETE.code ||
+      planType === ROOT_REVIVAL.code ||
+      planType === SERUM.code) &&
     futureReservationVariantIds.length > 0
   ) {
+    const unitsPerVariant =
+      (planType === ROOT_REVIVAL.code
+        ? ROOT_REVIVAL.maxCycles
+        : planType === SERUM.code
+          ? SERUM.maxCycles
+          : COMPLETE.maxCycles) - 1;
+
     const reservationResult =
       await reserveCompleteFutureInventory({
         graphql: admin.graphql,
@@ -260,12 +344,68 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         planType,
         locationId: config.locationId,
         variantIds: futureReservationVariantIds,
-        unitsPerVariant: COMPLETE.maxCycles - 1,
+        unitsPerVariant,
       });
 
     console.log(
       `Future inventory reservation reconciled for ${contractId}`,
       reservationResult,
+    );
+  }
+
+  const lifecycleRecipient =
+    contract.customer?.defaultEmailAddress
+      ?.emailAddress?.trim();
+
+  if (
+    lifecycleRecipient &&
+    planType === ROOT_REVIVAL.code
+  ) {
+    if (!rootRevivalIntervalWeeks) {
+      throw new Error(
+        `Unable to determine Root Revival interval for contract ${contractId}`,
+      );
+    }
+
+    const lifecycleStartedAt =
+      contract.createdAt
+        ? new Date(contract.createdAt)
+        : new Date();
+
+    const lifecycleResult =
+      await scheduleRootRevivalLifecycleEmails({
+        shop,
+        contractId,
+        recipientEmail: lifecycleRecipient,
+        startedAt: lifecycleStartedAt,
+        intervalWeeks: rootRevivalIntervalWeeks,
+      });
+
+    console.log(
+      `Root Revival lifecycle emails scheduled for ${contractId}`,
+      lifecycleResult,
+    );
+  } else if (lifecycleRecipient) {
+    const lifecycleStartedAt =
+      contract.createdAt
+        ? new Date(contract.createdAt)
+        : new Date();
+
+    const lifecycleResult =
+      await scheduleLifecycleEmails({
+        shop,
+        contractId,
+        recipientEmail: lifecycleRecipient,
+        startedAt: lifecycleStartedAt,
+      });
+
+    console.log(
+      `Lifecycle emails scheduled for ${contractId}`,
+      lifecycleResult,
+    );
+  } else {
+    console.warn(
+      `Lifecycle emails not scheduled because customer email is unavailable for ${contractId}`,
     );
   }
 

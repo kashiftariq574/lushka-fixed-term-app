@@ -6,6 +6,7 @@ import {
   releaseReservedVariantUnits,
   releaseVariantUnits,
   reserveVariantUnits,
+  restoreReleasedVariantUnitForConsumption,
 } from "./inventory-reservations.server";
 
 const variantId = "gid://shopify/ProductVariant/123";
@@ -443,6 +444,59 @@ describe("releaseReservedVariantUnits", () => {
               locationId,
               name: "available",
               ledgerDocumentUri: null,
+              changeFromQuantity: null,
+            },
+          },
+        ],
+      },
+    });
+  });
+});
+
+describe("restoreReleasedVariantUnitForConsumption", () => {
+  it("moves one available unit back to reserved without a preflight read", async () => {
+    const graphql = vi.fn();
+
+    graphql.mockResolvedValue(moveSuccessResponse());
+
+    await restoreReleasedVariantUnitForConsumption({
+      graphql,
+      inventoryItemId,
+      locationId,
+      reservedLedgerDocumentUri:
+        "lushka://subscription/123/future-reservation",
+      referenceDocumentUri:
+        "lushka://subscription/123/cycle/1/serum-billing-restore",
+      idempotencyKey:
+        "serum-billing-restore:123:serum:cycle:1:attempt:1",
+    });
+
+    expect(graphql).toHaveBeenCalledTimes(1);
+
+    const mutationCall = graphql.mock.calls[0][1];
+
+    expect(mutationCall.variables).toEqual({
+      idempotencyKey:
+        "serum-billing-restore:123:serum:cycle:1:attempt:1",
+      input: {
+        reason: "reservation_created",
+        referenceDocumentUri:
+          "lushka://subscription/123/cycle/1/serum-billing-restore",
+        changes: [
+          {
+            quantity: 1,
+            inventoryItemId,
+            from: {
+              locationId,
+              name: "available",
+              ledgerDocumentUri: null,
+              changeFromQuantity: null,
+            },
+            to: {
+              locationId,
+              name: "reserved",
+              ledgerDocumentUri:
+                "lushka://subscription/123/future-reservation",
               changeFromQuantity: null,
             },
           },

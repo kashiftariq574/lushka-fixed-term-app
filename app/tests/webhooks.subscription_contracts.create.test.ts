@@ -9,6 +9,8 @@ const {
   inventoryUpsert,
   deductInventoryMock,
   reserveCompleteFutureInventoryMock,
+  scheduleLifecycleEmailsMock,
+  scheduleRootRevivalLifecycleEmailsMock,
 } = vi.hoisted(() => ({
   authenticateWebhookMock: vi.fn(),
   adminGraphqlMock: vi.fn(),
@@ -18,6 +20,8 @@ const {
   inventoryUpsert: vi.fn(),
   deductInventoryMock: vi.fn(),
   reserveCompleteFutureInventoryMock: vi.fn(),
+  scheduleLifecycleEmailsMock: vi.fn(),
+  scheduleRootRevivalLifecycleEmailsMock: vi.fn(),
 }));
 
 vi.mock("../shopify.server", () => ({
@@ -49,6 +53,13 @@ vi.mock("../services/program-inventory-reservations.server", () => ({
   reserveCompleteFutureInventory: reserveCompleteFutureInventoryMock,
 }));
 
+vi.mock("../services/lifecycle-email-events.server", () => ({
+  scheduleLifecycleEmails:
+    scheduleLifecycleEmailsMock,
+  scheduleRootRevivalLifecycleEmails:
+    scheduleRootRevivalLifecycleEmailsMock,
+}));
+
 import { action } from "../routes/webhooks.subscription_contracts.create";
 
 const shop = "b0z0gt-be.myshopify.com";
@@ -59,6 +70,9 @@ const config = {
   locationId: "gid://shopify/Location/1",
   completeSellingPlanId: "gid://shopify/SellingPlan/complete",
   serumSellingPlanId: "gid://shopify/SellingPlan/serum",
+  rootRevival4WeekSellingPlanId: "gid://shopify/SellingPlan/root-4",
+  rootRevival6WeekSellingPlanId: "gid://shopify/SellingPlan/root-6",
+  rootRevival8WeekSellingPlanId: "gid://shopify/SellingPlan/root-8",
   serumVariantId: "gid://shopify/ProductVariant/serum",
   shampooVariantId: "gid://shopify/ProductVariant/shampoo",
   conditionerVariantId: "gid://shopify/ProductVariant/conditioner",
@@ -90,15 +104,53 @@ function mockContract(quantity = 1) {
         subscriptionContract: {
           id: contractId,
           status: "ACTIVE",
+          createdAt: "2026-09-07T00:00:00.000Z",
           nextBillingDate: "2026-10-07T00:00:00.000Z",
           customer: {
             id: "gid://shopify/Customer/789",
+            firstName: "Samantha",
+            defaultEmailAddress: {
+              emailAddress:
+                "customer@example.com",
+            },
           },
           lines: {
             nodes: [
               {
                 sellingPlanId: config.completeSellingPlanId,
                 quantity,
+              },
+            ],
+          },
+        },
+      },
+    }),
+  });
+}
+
+function mockRootRevivalContract(
+  sellingPlanId = config.rootRevival4WeekSellingPlanId,
+) {
+  adminGraphqlMock.mockResolvedValue({
+    json: async () => ({
+      data: {
+        subscriptionContract: {
+          id: contractId,
+          status: "ACTIVE",
+          createdAt: "2026-09-07T00:00:00.000Z",
+          nextBillingDate: "2026-10-05T00:00:00.000Z",
+          customer: {
+            id: "gid://shopify/Customer/789",
+            firstName: "Samantha",
+            defaultEmailAddress: {
+              emailAddress: "customer@example.com",
+            },
+          },
+          lines: {
+            nodes: [
+              {
+                sellingPlanId,
+                quantity: 1,
               },
             ],
           },
@@ -121,6 +173,15 @@ describe("subscription contract create webhook safety", () => {
     inventoryUpsert.mockResolvedValue({});
     deductInventoryMock.mockResolvedValue(undefined);
     reserveCompleteFutureInventoryMock.mockResolvedValue(undefined);
+
+    scheduleLifecycleEmailsMock.mockResolvedValue({
+      scheduled: 4,
+    });
+
+    scheduleRootRevivalLifecycleEmailsMock.mockResolvedValue({
+      scheduled: 4,
+      intervalWeeks: 4,
+    });
   });
 
   it("processes Complete plan initial inventory including the massager", async () => {
@@ -179,6 +240,91 @@ describe("subscription contract create webhook safety", () => {
       ],
       unitsPerVariant: 2,
     });
+
+    expect(
+      scheduleLifecycleEmailsMock,
+    ).toHaveBeenCalledTimes(1);
+
+    expect(
+      scheduleLifecycleEmailsMock,
+    ).toHaveBeenCalledWith({
+      shop,
+      contractId,
+      recipientEmail:
+        "customer@example.com",
+      startedAt: new Date(
+        "2026-09-07T00:00:00.000Z",
+      ),
+    });
+  });
+
+  it("processes Root Revival initial inventory and reserves two future deliveries", async () => {
+    mockRootRevivalContract();
+
+    const response = await action({
+      request: new Request("https://example.com/webhook", {
+        method: "POST",
+      }),
+    } as any);
+
+    expect(response.status).toBe(200);
+
+    expect(deductInventoryMock).toHaveBeenCalledWith({
+      graphql: adminGraphqlMock,
+      variantIds: [
+        config.serumVariantId,
+        config.shampooVariantId,
+        config.conditionerVariantId,
+      ],
+      locationId: config.locationId,
+      idempotencyKey: `inventory:initial:${contractId}`,
+      referenceDocumentUri: "lushka://subscription/123/initial",
+    });
+
+    expect(inventoryUpsert).toHaveBeenCalledWith({
+      where: {
+        idempotencyKey: `initial:${contractId}`,
+      },
+      update: {},
+      create: {
+        shop,
+        orderId: originOrderId,
+        planType: "ROOT_REVIVAL_TRIO",
+        idempotencyKey: `initial:${contractId}`,
+      },
+    });
+
+    expect(
+      reserveCompleteFutureInventoryMock,
+    ).toHaveBeenCalledWith({
+      graphql: adminGraphqlMock,
+      shop,
+      contractId,
+      planType: "ROOT_REVIVAL_TRIO",
+      locationId: config.locationId,
+      variantIds: [
+        config.serumVariantId,
+        config.shampooVariantId,
+        config.conditionerVariantId,
+      ],
+      unitsPerVariant: 2,
+    });
+
+    expect(
+      scheduleRootRevivalLifecycleEmailsMock,
+    ).toHaveBeenCalledWith({
+      shop,
+      contractId,
+      recipientEmail: "customer@example.com",
+      startedAt: new Date(
+        "2026-09-07T00:00:00.000Z",
+      ),
+      intervalWeeks: 4,
+    });
+
+    expect(
+      scheduleLifecycleEmailsMock,
+    ).not.toHaveBeenCalled();
   });
 
   it("does not deduct inventory again when initial inventory was already processed", async () => {
@@ -257,7 +403,15 @@ describe("subscription contract create webhook safety", () => {
     expect(deductInventoryMock).not.toHaveBeenCalled();
     expect(
       reserveCompleteFutureInventoryMock,
-    ).not.toHaveBeenCalled();
+    ).toHaveBeenCalledWith({
+      graphql: adminGraphqlMock,
+      shop,
+      contractId,
+      planType: "SERUM_RITUAL_90",
+      locationId: config.locationId,
+      variantIds: [config.serumVariantId],
+      unitsPerVariant: 2,
+    });
 
     expect(inventoryUpsert).toHaveBeenCalledWith({
       where: {
@@ -271,6 +425,55 @@ describe("subscription contract create webhook safety", () => {
         idempotencyKey: `initial:${contractId}`,
       },
     });
+  });
+
+  it("still reconciles Serum future reservation when initial inventory was already processed", async () => {
+    inventoryFindUnique.mockResolvedValue({
+      id: "inventory-process-1",
+      idempotencyKey: `initial:${contractId}`,
+    });
+
+    adminGraphqlMock.mockResolvedValue({
+      json: async () => ({
+        data: {
+          subscriptionContract: {
+            id: contractId,
+            status: "ACTIVE",
+            nextBillingDate: "2026-10-07T00:00:00.000Z",
+            customer: {
+              id: "gid://shopify/Customer/789",
+            },
+            lines: {
+              nodes: [
+                {
+                  sellingPlanId: config.serumSellingPlanId,
+                  quantity: 1,
+                },
+              ],
+            },
+          },
+        },
+      }),
+    });
+
+    const response = await action({
+      request: new Request("https://example.com/webhook", {
+        method: "POST",
+      }),
+    } as any);
+
+    expect(response.status).toBe(200);
+    expect(deductInventoryMock).not.toHaveBeenCalled();
+    expect(inventoryUpsert).not.toHaveBeenCalled();
+    expect(
+      reserveCompleteFutureInventoryMock,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        planType: "SERUM_RITUAL_90",
+        unitsPerVariant: 2,
+        variantIds: [config.serumVariantId],
+      }),
+    );
   });
 
 });

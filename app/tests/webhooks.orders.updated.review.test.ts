@@ -33,6 +33,7 @@ const {
   sendReviewEmailMock,
 
   reviewOrderEmailProductLabelsMock,
+  reviewOrderEmailProductImagesMock,
   reviewStorefrontUrlMock,
 
   removeReviewOrderTagsMock,
@@ -64,6 +65,8 @@ const {
   sendReviewEmailMock: vi.fn(),
 
   reviewOrderEmailProductLabelsMock:
+    vi.fn(),
+  reviewOrderEmailProductImagesMock:
     vi.fn(),
   reviewStorefrontUrlMock: vi.fn(),
 
@@ -164,6 +167,8 @@ vi.mock(
   () => ({
     reviewOrderEmailProductLabels:
       reviewOrderEmailProductLabelsMock,
+    reviewOrderEmailProductImages:
+      reviewOrderEmailProductImagesMock,
     reviewStorefrontUrl:
       reviewStorefrontUrlMock,
   }),
@@ -193,6 +198,12 @@ const customerId =
 const requestReadyTag =
   "lushka-app-14-review-request-ready";
 
+const day28PhotosOnlyRequestTag =
+  "lushka-app-28-photos-only-request-ready";
+
+const day28ReviewPhotosRequestTag =
+  "lushka-app-28-review-photos-ready";
+
 const rewardReadyTag =
   "r14-form-abc";
 
@@ -212,6 +223,19 @@ const order = {
       "Multi-Peptide Hair Growth Serum",
     review:
       "Really enjoying the product.",
+  },
+
+  day28ReviewBridge: {
+    handle: "form-xyz",
+    email: "customer@example.com",
+    orderNumber: "1001",
+    product:
+      "Multi-Peptide Hair Growth Serum",
+    review:
+      "Still really enjoying the product.",
+    photo1:
+      "https://cdn.shopify.com/review-photo.jpg",
+    ownershipConsent: "Yes",
   },
 
   cancelledAt: null,
@@ -302,14 +326,18 @@ function requestEligibility() {
   };
 }
 
-function mockRequestDefaults() {
+function mockRequestDefaults({
+  readyTag = requestReadyTag,
+}: {
+  readyTag?: string;
+} = {}) {
   authenticateWebhookMock.mockResolvedValue(
-    webhookPayload(requestReadyTag),
+    webhookPayload(readyTag),
   );
 
   getReviewOrderMock.mockResolvedValue({
     ...order,
-    tags: [requestReadyTag],
+    tags: [readyTag],
   });
 
   claimReviewSignalMock.mockResolvedValue(
@@ -323,6 +351,8 @@ function mockRequestDefaults() {
   reviewOrderEmailProductLabelsMock.mockReturnValue([
     "Multi-Peptide Hair Growth Serum",
   ]);
+
+  reviewOrderEmailProductImagesMock.mockReturnValue([]);
 
   reviewStorefrontUrlMock.mockReturnValue(
     `https://${shop}`,
@@ -378,14 +408,19 @@ function mockRewardDefaults({
     }),
   );
 
+  const rewardStage =
+    readyTag === day28RewardReadyTag
+      ? "DAY_28"
+      : "DAY_14";
+
   buildReviewRewardKeyMock.mockReturnValue(
-    `${shop}|${orderId}|REWARD|DAY_14`,
+    `${shop}|${orderId}|REWARD|${rewardStage}`,
   );
 
   claimReviewRewardGrantMock.mockResolvedValue({
     claimed: true,
     rewardKey:
-      `${shop}|${orderId}|REWARD|DAY_14`,
+      `${shop}|${orderId}|REWARD|${rewardStage}`,
   });
 
   validateEligibilityMock.mockReturnValue(
@@ -442,6 +477,8 @@ function mockRewardDefaults({
   reviewOrderEmailProductLabelsMock.mockReturnValue([
     "Multi-Peptide Hair Growth Serum",
   ]);
+
+  reviewOrderEmailProductImagesMock.mockReturnValue([]);
 
   reviewStorefrontUrlMock.mockReturnValue(
     `https://${shop}`,
@@ -579,6 +616,94 @@ describe(
             requestReadyTag,
           finalTags: [
             "lushka-14-review-request-sent",
+          ],
+        });
+      },
+    );
+
+    it(
+      "sends photos-only request for the Day-28 photos-only READY tag",
+      async () => {
+        mockRequestDefaults({
+          readyTag:
+            day28PhotosOnlyRequestTag,
+        });
+
+        const response =
+          await executeWebhook();
+
+        expect(response.status).toBe(200);
+
+        expect(
+          createDiscountMock,
+        ).not.toHaveBeenCalled();
+
+        expect(
+          sendReviewEmailMock,
+        ).toHaveBeenCalledTimes(1);
+
+        expect(
+          sendReviewEmailMock,
+        ).toHaveBeenCalledWith(
+          expect.objectContaining({
+            emailType:
+              "DAY_28_PHOTOS_ONLY_REQUEST",
+          }),
+        );
+
+        expect(
+          transitionReviewOrderTagsMock,
+        ).toHaveBeenCalledWith({
+          graphql: adminGraphqlMock,
+          orderId,
+          readyTag:
+            day28PhotosOnlyRequestTag,
+          finalTags: [
+            "lushka-28-review-request-sent",
+          ],
+        });
+      },
+    );
+
+    it(
+      "sends review-and-photos request for the Day-28 review-photos READY tag",
+      async () => {
+        mockRequestDefaults({
+          readyTag:
+            day28ReviewPhotosRequestTag,
+        });
+
+        const response =
+          await executeWebhook();
+
+        expect(response.status).toBe(200);
+
+        expect(
+          createDiscountMock,
+        ).not.toHaveBeenCalled();
+
+        expect(
+          sendReviewEmailMock,
+        ).toHaveBeenCalledTimes(1);
+
+        expect(
+          sendReviewEmailMock,
+        ).toHaveBeenCalledWith(
+          expect.objectContaining({
+            emailType:
+              "DAY_28_REVIEW_PHOTOS_REQUEST",
+          }),
+        );
+
+        expect(
+          transitionReviewOrderTagsMock,
+        ).toHaveBeenCalledWith({
+          graphql: adminGraphqlMock,
+          orderId,
+          readyTag:
+            day28ReviewPhotosRequestTag,
+          finalTags: [
+            "lushka-28-review-request-sent",
           ],
         });
       },

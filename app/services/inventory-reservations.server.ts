@@ -406,3 +406,41 @@ export async function releaseReservedVariantUnitForConsumption({
     idempotencyKey,
   });
 }
+
+export async function restoreReleasedVariantUnitForConsumption({
+  graphql,
+  inventoryItemId,
+  locationId,
+  reservedLedgerDocumentUri,
+  referenceDocumentUri,
+  idempotencyKey,
+}: {
+  graphql: AdminGraphql;
+  inventoryItemId: string;
+  locationId: string;
+  reservedLedgerDocumentUri: string;
+  referenceDocumentUri: string;
+  idempotencyKey: string;
+}) {
+  /*
+   * Inverse of releaseReservedVariantUnitForConsumption.
+   *
+   * Used when a Serum unit was released for billing but payment
+   * definitely failed. Replay with the same idempotency key is safe.
+   */
+  return moveInventory({
+    graphql,
+    inventoryItemId,
+    locationId,
+    quantityToMove: 1,
+    fromName: "available",
+    toName: "reserved",
+    fromQuantity: null,
+    toQuantity: null,
+    fromLedgerDocumentUri: null,
+    toLedgerDocumentUri: reservedLedgerDocumentUri,
+    reason: "reservation_created",
+    referenceDocumentUri,
+    idempotencyKey,
+  });
+}

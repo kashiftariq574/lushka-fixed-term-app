@@ -12,6 +12,7 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import {
   createCompletePlan,
+  createRootRevivalPlans,
   createSerumPlan,
 } from "../services/selling-plans.server";
 
@@ -99,6 +100,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       "completeParentVariantId",
     );
 
+    const rootRevivalParentVariantId = required(
+      formData,
+      "rootRevivalParentVariantId",
+    );
+
     const serumVariantId = required(formData, "serumVariantId");
     const shampooVariantId = required(formData, "shampooVariantId");
     const conditionerVariantId = required(
@@ -141,10 +147,32 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       };
     }
 
+    if (
+      (
+        existing?.rootRevival4WeekSellingPlanId ||
+        existing?.rootRevival6WeekSellingPlanId ||
+        existing?.rootRevival8WeekSellingPlanId
+      ) &&
+      existing.rootRevivalParentVariantId &&
+      existing.rootRevivalParentVariantId !== rootRevivalParentVariantId
+    ) {
+      return {
+        ok: false,
+        error:
+          "Root Revival Trio product cannot be changed because its selling plans already exist.",
+      };
+    }
+
     const completeParentProductId =
       await parentProductIdForVariant(
         admin,
         completeParentVariantId,
+      );
+
+    const rootRevivalParentProductId =
+      await parentProductIdForVariant(
+        admin,
+        rootRevivalParentVariantId,
       );
 
     const serumParentProductId =
@@ -158,6 +186,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       update: {
         completeParentProductId,
         completeParentVariantId,
+
+        rootRevivalParentProductId,
+        rootRevivalParentVariantId,
 
         serumVariantId,
         shampooVariantId,
@@ -174,6 +205,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
         completeParentProductId,
         completeParentVariantId,
+
+        rootRevivalParentProductId,
+        rootRevivalParentVariantId,
 
         serumVariantId,
         shampooVariantId,
@@ -233,6 +267,34 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       });
     }
 
+    if (
+      !config.rootRevivalSellingPlanGroupId ||
+      !config.rootRevival4WeekSellingPlanId ||
+      !config.rootRevival6WeekSellingPlanId ||
+      !config.rootRevival8WeekSellingPlanId
+    ) {
+      const rootRevivalPlans = await createRootRevivalPlans(
+        graphqlClient,
+        rootRevivalParentProductId,
+      );
+
+      config = await db.shopConfig.update({
+        where: {
+          shop: session.shop,
+        },
+        data: {
+          rootRevivalSellingPlanGroupId:
+            rootRevivalPlans.groupId,
+          rootRevival4WeekSellingPlanId:
+            rootRevivalPlans.plan4WeekId,
+          rootRevival6WeekSellingPlanId:
+            rootRevivalPlans.plan6WeekId,
+          rootRevival8WeekSellingPlanId:
+            rootRevivalPlans.plan8WeekId,
+        },
+      });
+    }
+
     return {
       ok: true,
       message: "LUSHKA subscription configuration saved successfully.",
@@ -265,6 +327,18 @@ export default function SetupPage() {
         }
       : null,
   );
+
+  const [rootRevival, setRootRevival] =
+    useState<PickerValue | null>(
+      config?.rootRevivalParentVariantId
+        ? {
+            id: config.rootRevivalParentVariantId,
+            label: config.rootRevivalParentVariantId,
+            productId:
+              config.rootRevivalParentProductId ?? undefined,
+          }
+        : null,
+    );
 
   const [serum, setSerum] = useState<PickerValue | null>(
     config?.serumVariantId
@@ -394,6 +468,12 @@ export default function SetupPage() {
             />
 
             <VariantRow
+              title="Root Revival Subscription Trio parent variant"
+              value={rootRevival}
+              setter={setRootRevival}
+            />
+
+            <VariantRow
               title="Multi-Peptide Hair Growth Serum"
               value={serum}
               setter={setSerum}
@@ -434,6 +514,12 @@ export default function SetupPage() {
               type="hidden"
               name="completeParentVariantId"
               value={complete?.id ?? ""}
+            />
+
+            <input
+              type="hidden"
+              name="rootRevivalParentVariantId"
+              value={rootRevival?.id ?? ""}
             />
 
             <input
@@ -553,7 +639,17 @@ export default function SetupPage() {
           </s-paragraph>
 
           <s-paragraph>
-            Both programmes are fixed to 3 monthly payments.
+            Root Revival Trio:{" "}
+            {config?.rootRevival4WeekSellingPlanId &&
+            config?.rootRevival6WeekSellingPlanId &&
+            config?.rootRevival8WeekSellingPlanId
+              ? "Created"
+              : "Not created"}
+          </s-paragraph>
+
+          <s-paragraph>
+            Complete Recovery and Serum Ritual use 3 monthly payments.
+            Root Revival uses 3 payments at the selected 4, 6, or 8 week interval.
           </s-paragraph>
         </s-stack>
       </s-section>

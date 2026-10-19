@@ -8,6 +8,7 @@ const {
   contractStateUpdate,
   shopConfigFindUnique,
   releaseCompleteRemainingInventoryMock,
+  releaseSerumRemainingInventoryMock,
 } = vi.hoisted(() => ({
   authenticateWebhookMock: vi.fn(),
   adminGraphqlMock: vi.fn(),
@@ -15,6 +16,7 @@ const {
   contractStateUpdate: vi.fn(),
   shopConfigFindUnique: vi.fn(),
   releaseCompleteRemainingInventoryMock: vi.fn(),
+  releaseSerumRemainingInventoryMock: vi.fn(),
 }));
 
 vi.mock("../shopify.server", () => ({
@@ -40,8 +42,13 @@ vi.mock("../services/program-inventory-release.server", () => ({
     releaseCompleteRemainingInventoryMock,
 }));
 
+vi.mock("../services/serum-inventory-reservation.server", () => ({
+  releaseSerumRemainingInventory:
+    releaseSerumRemainingInventoryMock,
+}));
+
 import { action } from "../routes/webhooks.subscription_contracts.update";
-import { COMPLETE, SERUM } from "../domain/subscription-policy";
+import { COMPLETE, ROOT_REVIVAL, SERUM } from "../domain/subscription-policy";
 
 const shop = "b0z0gt-be.myshopify.com";
 const contractId = "gid://shopify/SubscriptionContract/123";
@@ -83,6 +90,10 @@ describe("subscription contract update webhook safety", () => {
     contractStateUpdate.mockResolvedValue({});
     releaseCompleteRemainingInventoryMock.mockResolvedValue({
       released: 5,
+      skipped: 0,
+    });
+    releaseSerumRemainingInventoryMock.mockResolvedValue({
+      released: 1,
       skipped: 0,
     });
 
@@ -187,6 +198,59 @@ describe("subscription contract update webhook safety", () => {
     });
   });
 
+  it("releases Root Revival reserved stock before marking a cancelled contract terminal", async () => {
+    contractStateFindUnique.mockResolvedValue({
+      contractId,
+      status: "ACTIVE",
+      planType: ROOT_REVIVAL.code,
+    });
+
+    mockShopifyContract("CANCELLED", null);
+
+    const response = await action({
+      request: new Request("https://example.com/webhook", {
+        method: "POST",
+      }),
+    } as unknown as ActionFunctionArgs);
+
+    expect(response.status).toBe(200);
+
+    expect(shopConfigFindUnique).toHaveBeenCalledWith({
+      where: {
+        shop,
+      },
+    });
+
+    expect(
+      releaseCompleteRemainingInventoryMock,
+    ).toHaveBeenCalledWith({
+      graphql: adminGraphqlMock,
+      contractId,
+      variantIds: [
+        "gid://shopify/ProductVariant/serum",
+        "gid://shopify/ProductVariant/shampoo",
+        "gid://shopify/ProductVariant/conditioner",
+      ],
+      reason: "contract-terminal",
+    });
+
+    expect(
+      releaseCompleteRemainingInventoryMock.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      contractStateUpdate.mock.invocationCallOrder[0],
+    );
+
+    expect(contractStateUpdate).toHaveBeenCalledWith({
+      where: {
+        contractId,
+      },
+      data: {
+        status: "CANCELLED",
+        nextBillingAt: null,
+      },
+    });
+  });
+
   it("releases Complete reserved stock before marking an expired contract terminal", async () => {
     contractStateFindUnique.mockResolvedValue({
       contractId,
@@ -224,7 +288,7 @@ describe("subscription contract update webhook safety", () => {
     });
   });
 
-  it("does not manually release inventory for a terminal Serum contract", async () => {
+  it("releases Serum reserved stock for a terminal Serum contract", async () => {
     contractStateFindUnique.mockResolvedValue({
       contractId,
       status: "ACTIVE",
@@ -232,6 +296,10 @@ describe("subscription contract update webhook safety", () => {
     });
 
     mockShopifyContract("CANCELLED", null);
+
+    shopConfigFindUnique.mockResolvedValue({
+      serumVariantId: "gid://shopify/ProductVariant/serum",
+    });
 
     const response = await action({
       request: new Request("https://example.com/webhook", {
@@ -241,7 +309,16 @@ describe("subscription contract update webhook safety", () => {
 
     expect(response.status).toBe(200);
 
-    expect(shopConfigFindUnique).not.toHaveBeenCalled();
+    expect(shopConfigFindUnique).toHaveBeenCalled();
+
+    expect(
+      releaseSerumRemainingInventoryMock,
+    ).toHaveBeenCalledWith({
+      graphql: adminGraphqlMock,
+      contractId,
+      serumVariantId: "gid://shopify/ProductVariant/serum",
+      reason: "contract-terminal",
+    });
 
     expect(
       releaseCompleteRemainingInventoryMock,

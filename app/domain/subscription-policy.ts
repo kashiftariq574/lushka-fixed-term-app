@@ -18,6 +18,16 @@ export const SERUM = {
   intervalCount: 1,
 };
 
+export const ROOT_REVIVAL = {
+  code: "ROOT_REVIVAL_TRIO",
+  baseMinor: 6800,
+  chargeMinor: 5900,
+  savingMinor: 900,
+  maxCycles: 3,
+  interval: "WEEK" as const,
+  allowedIntervalCounts: [4, 6, 8] as const,
+};
+
 export function discountedMinor(baseMinor: number, percentOff: number): number {
   return Math.round(baseMinor * (1 - percentOff / 100));
 }

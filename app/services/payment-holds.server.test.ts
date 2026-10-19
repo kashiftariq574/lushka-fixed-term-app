@@ -6,12 +6,14 @@ const {
   shopConfigFindUnique,
   adminMock,
   releaseCompleteRemainingInventoryMock,
+  releaseSerumRemainingInventoryMock,
 } = vi.hoisted(() => ({
   contractFindMany: vi.fn(),
   contractUpdateMany: vi.fn(),
   shopConfigFindUnique: vi.fn(),
   adminMock: vi.fn(),
   releaseCompleteRemainingInventoryMock: vi.fn(),
+  releaseSerumRemainingInventoryMock: vi.fn(),
 }));
 
 vi.mock("../db.server", () => ({
@@ -35,6 +37,11 @@ vi.mock("../shopify.server", () => ({
 vi.mock("./program-inventory-release.server", () => ({
   releaseCompleteRemainingInventory:
     releaseCompleteRemainingInventoryMock,
+}));
+
+vi.mock("./serum-inventory-reservation.server", () => ({
+  releaseSerumRemainingInventory:
+    releaseSerumRemainingInventoryMock,
 }));
 
 import { processExpiredPaymentHolds } from "./payment-holds.server";
@@ -81,6 +88,10 @@ describe("processExpiredPaymentHolds", () => {
 
     releaseCompleteRemainingInventoryMock.mockResolvedValue({
       released: 5,
+      skipped: 0,
+    });
+    releaseSerumRemainingInventoryMock.mockResolvedValue({
+      released: 1,
       skipped: 0,
     });
 
@@ -145,8 +156,12 @@ describe("processExpiredPaymentHolds", () => {
     });
   });
 
-  it("expires Serum hold without manual inventory release", async () => {
+  it("releases remaining Serum reserved stock before expiring the payment hold", async () => {
     contractFindMany.mockResolvedValue([serumContract]);
+
+    shopConfigFindUnique.mockResolvedValue({
+      serumVariantId: completeVariantIds[0],
+    });
 
     const result = await processExpiredPaymentHolds(now);
 
@@ -154,7 +169,14 @@ describe("processExpiredPaymentHolds", () => {
       releaseCompleteRemainingInventoryMock,
     ).not.toHaveBeenCalled();
 
-    expect(shopConfigFindUnique).not.toHaveBeenCalled();
+    expect(
+      releaseSerumRemainingInventoryMock,
+    ).toHaveBeenCalledWith({
+      graphql: expect.any(Function),
+      contractId: serumContract.contractId,
+      serumVariantId: completeVariantIds[0],
+      reason: "payment-hold-expiry",
+    });
 
     expect(contractUpdateMany).toHaveBeenCalledWith({
       where: {

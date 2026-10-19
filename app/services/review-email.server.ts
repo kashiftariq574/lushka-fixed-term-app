@@ -13,6 +13,10 @@ type SendReviewEmailInput = {
   customerName?: string | null;
   orderName: string;
   productLabels: string[];
+  productImages?: Array<{
+    url: string;
+    altText?: string | null;
+  }>;
   storefrontUrl: string;
   unsubscribeUrl?: string | null;
   discountCode?: string | null;
@@ -196,9 +200,13 @@ function unsubscribeHtml(
 function emailShell({
   preheader,
   body,
+  showBrandHeader = true,
+  showSignature = true,
 }: {
   preheader?: string | null;
   body: string;
+  showBrandHeader?: boolean;
+  showSignature?: boolean;
 }): string {
   return `
     <!doctype html>
@@ -232,26 +240,164 @@ function emailShell({
               border-radius:6px;
             "
           >
-            <h1
-              style="
-                margin:0 0 28px;
-                font-size:26px;
-                letter-spacing:1px;
-              "
-            >
-              LUSHKA
-            </h1>
+            ${
+              showBrandHeader
+                ? `
+                  <h1
+                    style="
+                      margin:0 0 28px;
+                      font-size:26px;
+                      letter-spacing:1px;
+                    "
+                  >
+                    LUSHKA
+                  </h1>
+                `
+                : ""
+            }
 
             ${body}
 
-            <p style="margin:30px 0 0;">
-              With care,<br />
-              <strong>LUSHKA</strong>
-            </p>
+            ${
+              showSignature
+                ? `
+                  <p style="margin:30px 0 0;">
+                    With care,<br />
+                    <strong>LUSHKA</strong>
+                  </p>
+                `
+                : ""
+            }
           </div>
         </div>
       </body>
     </html>
+  `;
+}
+
+function productHeroHtml(
+  images:
+    | Array<{
+        url: string;
+        altText?: string | null;
+      }>
+    | undefined,
+): string {
+  const unique = new Map<
+    string,
+    {
+      url: string;
+      altText?: string | null;
+    }
+  >();
+
+  for (const image of images ?? []) {
+    const url = image.url?.trim();
+
+    if (!url || unique.has(url)) {
+      continue;
+    }
+
+    unique.set(url, {
+      url,
+      altText: image.altText,
+    });
+  }
+
+  const items = [...unique.values()].slice(0, 5);
+
+  if (items.length === 0) {
+    return "";
+  }
+
+  if (items.length === 1) {
+    const image = items[0];
+
+    return `
+      <div
+        style="
+          background:#eee5d8;
+          text-align:center;
+          overflow:hidden;
+          border-radius:0 0 14px 14px;
+          margin:0 0 28px;
+        "
+      >
+        <img
+          src="${escapeHtml(
+            safeHttpUrl(image.url),
+          )}"
+          alt="${escapeHtml(
+            image.altText?.trim() ||
+              "Lushka product",
+          )}"
+          width="100%"
+          style="
+            display:block;
+            width:100%;
+            max-width:100%;
+            height:auto;
+            border:0;
+          "
+        />
+      </div>
+    `;
+  }
+
+  const columnWidth =
+    Math.floor(100 / items.length);
+
+  return `
+    <div
+      style="
+        background:#eee5d8;
+        padding:18px 10px;
+        margin:0 0 28px;
+        border-radius:0 0 14px 14px;
+      "
+    >
+      <table
+        role="presentation"
+        width="100%"
+        cellspacing="0"
+        cellpadding="0"
+        border="0"
+      >
+        <tr>
+          ${items
+            .map(
+              (image) => `
+                <td
+                  width="${columnWidth}%"
+                  align="center"
+                  valign="middle"
+                  style="padding:4px;"
+                >
+                  <img
+                    src="${escapeHtml(
+                      safeHttpUrl(image.url),
+                    )}"
+                    alt="${escapeHtml(
+                      image.altText?.trim() ||
+                        "Lushka product",
+                    )}"
+                    width="105"
+                    style="
+                      display:block;
+                      width:100%;
+                      max-width:105px;
+                      height:auto;
+                      border:0;
+                      margin:0 auto;
+                    "
+                  />
+                </td>
+              `,
+            )
+            .join("")}
+        </tr>
+      </table>
+    </div>
   `;
 }
 
@@ -287,51 +433,318 @@ function getReviewEmailContent(
           "/pages/lushka-14-day-review",
         );
 
+      const productName =
+        input.productLabels
+          .map((label) => escapeHtml(label.trim()))
+          .filter(Boolean)
+          .join(", ") ||
+        "your Lushka product";
+
       return {
         subject:
           "How are you finding your Lushka ritual?",
         html: emailShell({
           preheader:
             "Share your honest experience and receive 10% off your next purchase.",
+          showBrandHeader: false,
+          showSignature: false,
           body: `
-            <h2 style="margin:0 0 20px;">
-              How are you finding your Lushka ritual?
-            </h2>
+            <div
+              style="
+                background:#30150d;
+                color:#ffffff;
+                padding:18px 24px;
+                border-radius:10px 10px 0 0;
+              "
+            >
+              <table
+                role="presentation"
+                width="100%"
+                cellspacing="0"
+                cellpadding="0"
+                border="0"
+              >
+                <tr>
+                  <td
+                    style="
+                      font-size:24px;
+                      font-weight:700;
+                      letter-spacing:1.5px;
+                      color:#ffffff;
+                    "
+                  >
+                    ✦ LUSHKA
+                  </td>
 
-            <p>Hi ${name},</p>
+                  <td
+                    align="right"
+                    style="
+                      font-size:9px;
+                      letter-spacing:.7px;
+                      text-transform:uprcase;
+                      color:#d8bb72;
+                    "
+                  >
+                    
+                  </td>
+                </tr>
+              </table>
+            </div>
 
-            <p>
-              It has been around two weeks since your
-              Lushka order was fulfilled, and we would
-              love to hear how your experience is going.
-            </p>
+            <div
+              style="
+                background:#30150d;
+                color:#ffffff;
+                text-align:center;
+                padding:36px 24px 28px;
+                margin-top:22px;
+                border-radius:14px 14px 0 0;
+              "
+            >
+              <div
+                style="
+                  color:#d8bb72;
+                  font-size:28px;
+                  line-height:1;
+                  margin-bottom:12px;
+                "
+              >
+                ✦
+              </div>
 
-            <p>
-              Share your honest review and, once your
-              eligible review is submitted, we will send
-              you a unique 10% thank-you code.
-            </p>
+              <h2
+                style="
+                  margin:0;
+                  font-size:30px;
+                  line-height:1.2;
+                  color:#ffffff;
+                "
+              >
+                How are you finding<br />
+                your Lushka ritual?
+              </h2>
 
-            <p>
-              <strong>Order:</strong> ${orderName}
-            </p>
+              <div
+                style="
+                  margin-top:13px;
+                  color:#d8bb72;
+                  font-size:10px;
+                  font-weight:700;
+                  letter-spacing:.9px;
+                  text-transform:uppercase;
+                "
+              >
+                Two weeks in, we’d love to hear from you
+              </div>
+            </div>
 
-            ${products}
-
-            ${buttonHtml({
-              href: reviewUrl,
-              label: "Share your review",
-            })}
-
-            <p>
-              Your feedback can be positive, mixed or
-              critical — the reward is for an eligible
-              honest review, not for a particular rating.
-            </p>
-
-            ${unsubscribeHtml(
-              input.unsubscribeUrl,
+            ${productHeroHtml(
+              input.productImages,
             )}
+
+            <div style="padding-top:28px;">
+              <p
+                style="
+                  margin:0 0 12px;
+                  font-size:18px;
+                  font-weight:700;
+                "
+              >
+                Hi ${name},
+              </p>
+
+              <p
+                style="
+                  margin:0 0 22px;
+                  line-height:1.6;
+                "
+              >
+                It’s been two weeks since you chose
+                <strong>${productName}</strong>, and we hope
+                it’s becoming a valued part of your scalp,
+                hair or lash-care ritual.
+              </p>
+
+              <div
+                style="
+                  background:#f3eadc;
+                  padding:18px;
+                  border-radius:11px;
+                  margin:22px 0 26px;
+                "
+              >
+                <div
+                  style="
+                    color:#a68236;
+                    font-size:11px;
+                    font-weight:700;
+                    letter-spacing:.6px;
+                    text-transform:uppercase;
+                    margin-bottom:7px;
+                  "
+                >
+                  Thank you for supporting a heartfelt brand
+                </div>
+
+                <div
+                  style="
+                    line-height:1.5;
+                  "
+                >
+                  Every purchase supports an independent,
+                  founder-led Scottish brand born from a deeply
+                personal hair-loss journey—and helps us continue
+                  creating thoughtful, scalp-first care.
+                </div>
+              </div>
+
+              <h2
+                style="
+                  margin:0 0 10px;
+                  font-size:23px;
+                  line-height:1.3;
+                "
+              >
+                Share your experience
+              </h2>
+
+              <p
+                style="
+                  margin:0 0 24px;
+                  line-height:1.6;
+                "
+              >
+                Your honest feedback helps us improve and gives
+                future customers greater confidence when choosing
+                their routine. Tell us what you’ve enjoyed, how
+                the product fits into your routine and anything
+                you think another customer should know.
+              </p>
+
+              <div
+                style="
+                  text-align:center;
+                  margin:24px 0 30px;
+                "
+          >
+                <a
+                  href="${escapeHtml(
+                    safeHttpUrl(reviewUrl),
+                  )}"
+                  style="
+                    display:inline-block;
+                    width:70%;
+                    max-width:360px;
+                    box-sizing:border-box;
+                    background:#30150d;
+                    color:#ffffff;
+                    text-decoration:none;
+                    text-transform:uppercase;
+                    text-align:center;
+                    font-size:12px;
+                    font-weight:700;
+                    letter-spacing:.5px;
+                    padding:15px 22px;
+                    border-radius:30px;
+                  "
+                >
+                  Leave an honest review
+                </a>
+              </div>
+
+              <div
+                style="
+                  background:#ead49a;
+                  padding:20px;
+                  border-radius:11px;
+                  margin:0 0 24px;
+                "
+              >
+                <div
+                  style="
+                    font-size:12px;
+                    font-weight:700;
+                    text-transform:uppercase;
+                    margin-bottom:8px;
+                  "
+                >
+                  A little thank-you: 10% off your next purchase
+                </div>
+
+                <div
+                  style="
+                    line-height:1.5;
+                  "
+                >
+                  Once your review is submitted, we’ll send you
+                  a unique 10% discount code for your next
+                  Lushka order.
+                </div>
+              </div>
+
+              <div style="margin:0 0 24px;">
+                <div
+                  style="
+                    font-size:15px;
+                    font-weight:700;
+                    margin-bottom:7px;
+                  "
+                >
+                  A gentle reminder
+                </div>
+
+                <div
+                 tyle="
+                    line-height:1.6;
+                  "
+                >
+                  Scalp, hair and lash routines reward consistency.
+                  Continue following the product directions and
+                  give your routine time.
+                  <br /><br />
+                  If you need help, simply reply to this email.
+                </div>
+              </div>
+
+              <p
+                style="
+                  margin:0 0 28px;
+                  font-weight:700;
+                  line-height:1.5;
+                "
+              >
+                With gratitude,<br />
+                Samantha &amp; the Lushka team
+              </p>
+
+              <div
+                style="
+                  background:#30150d;
+                  color:#ffffff;
+                  text-align:center;
+                  padding:20px 16px;
+                  font-size:10px;
+                  line-height:1.8;
+                "
+              >
+                Lushka Cosmetics Ltd · 68 Nantwic Drive · Edinburgh EH7 6RB
+                <br />
+                www.lushkacosmetics.net · @lushka_cosmetics
+                <br />
+
+                <a
+                  href="${escapeHtml(
+                    safeHttpUrl(input.unsubscribeUrl),
+                  )}"
+                  style="
+                    color:#d8bb72;
+                    text-decoration:underline;
+                  "
+                >
+                  Unsubscribe
+                </a>
+              </div>
+            </div>
           `,
         }),
       };
@@ -352,52 +765,229 @@ function getReviewEmailContent(
 
       return {
         subject:
-        "Four weeks with Lushka—show us your journey",
+          "Four weeks with Lushka—show us your journey",
         html: emailShell({
           preheader:
             "Share an honest review and images to receive 20% off, valid for 30 days.",
+          showBrandHeader: false,
+          showSignature: false,
           body: `
-            <h2 style="margin:0 0 20px;">
-              Four weeks with Lushka
-            </h2>
+            <div
+              style="
+                background:#2b140d;
+                color:#ffffff;
+                text-align:center;
+              padding:34px 24px 30px;
+                border-radius:14px 14px 0 0;
+              "
+            >
+              <div
+                style="
+                  font-size:13px;
+                  letter-spacing:1.4px;
+                  text-transform:uppercase;
+                  color:#d7ba78;
+                  margin-bottom:12px;
+                "
+              >
+                LUSHKA
+              </div>
 
-            <p>Hi ${name},</p>
+              <h2
+                style="
+                  margin:0;
+                  font-size:30px;
+                  line-height:1.2;
+                  color:#ffffff;
+                "
+              >
+                Four weeks with Lushka—<br />
+                show us your journey
+              </h2>
 
-            <p>
-              You are now around four weeks into your
-              Lushka journey. We would love to hear how
-              things are going and see your progress.
-            </p>
+              <div
+                style="
+                  margin-top:14px;
+                  font-size:11px;
+                  letter-spacing:1px;
+                  text-transform:uppercase;
+                  color:#d7ba78;
+                "
+              >
+                Share your experice, in your own words and images
+              </div>
+            </div>
 
-            <p>
-              Submit your honest review together with
-              the required image upload and, once the
-              submission is eligible, we will send you
-              a unique 20% thank-you code valid for
-              30 days.
-            </p>
+            <div style="padding-top:28px;">
+              <p
+                style="
+                  font-size:18px;
+                  font-weight:700;
+                  margin-bottom:8px;
+                "
+              >
+                Hi ${name},
+              </p>
 
-            <p>
-              <strong>Order:</strong> ${orderName}
-            </p>
+              <p>
+                It’s been four weeks since your Lushka order,
+                and we’d love to know how your product is
+                fitting into your scalp, hair or lash-care routine.
+              </p>
 
-            ${products}
+              <div
+                style="
+                  background:#f3eadc;
+                  padding:18px;
+                  border-radius:12px;
+                  margin:24px 0;
+                "
+              >
+                <div
+                  style="
+                    font-size:12px;
+                    font-weight:700;
+                    letter-spacing:.8px;
+                    text-transform:uppercase;
+                    r:#a3823d;
+                    margin-bottom:8px;
+                  "
+                >
+                  Thank you for helping a heartfelt brand grow
+                </div>
 
-            ${buttonHtml({
-              href: reviewUrl,
-              label: "Share review & photos",
-          })}
+                <div>
+                  Your purchase supports an independent,
+                  founder-led Scottish brand born from a
+                  personal hair-loss journey—and helps us
+                  keep creating thoughtful, scalp-first care.
+                </div>
+              </div>
 
-            <p>
-              For photos, use clear natural light,
-              avoid beauty filters, and make sure no
-              private documents, addresses or sensitive
-              information are visible.
-            </p>
+              <h2
+                style="
+                  margin:26px 0 10px;
+                  font-size:22px;
+                "
+              >
+                Share your review and photos
+              </h2>
 
-            ${unsubscribeHtml(
-              input.unsubscribeUrl,
-            )}
+              <p>
+                Tell us what you’ve noticed, how the product
+                feels in your routine and what you would say
+                to someone considering it.
+              </p>
+
+              <p>
+                If you’re comfortable, upload one or more clear
+                images of your scalp, haihes, brows or
+                product ritual. Real, unfiltered experiences are
+                the most helpful.
+              </p>
+
+              <div
+                style="
+                  background:#faf7f2;
+                  border-radius:10px;
+                  padding:14px;
+                  text-align:center;
+                  margin:22px 0;
+                  font-size:11px;
+                  font-weight:700;
+                  letter-spacing:.7px;
+                  text-transform:uppercase;
+                "
+              >
+                Clear light &nbsp;·&nbsp;
+                No filters &nbsp;·&nbsp;
+                Same angle where possible &nbsp;·&nbsp;
+                Your own images
+              </div>
+
+              <p>
+                <strong>Order:</strong> ${orderName}
+              </p>
+
+              ${products}
+
+              ${buttonHtml({
+                href: reviewUrl,
+                label: "Share your review & photos",
+              })}
+
+              <div
+               yle="
+                  background:#ead6a3;
+                  padding:18px;
+                  border-radius:12px;
+                  margin:28px 0 22px;
+                "
+              >
+                <div
+                  style="
+                    font-weight:700;
+                    text-transform:uppercase;
+                    margin-bottom:8px;
+                  "
+                >
+                  Your thank-you: 20% off · valid for 30 days
+                </div>
+
+                <div>
+                  Once your honest review and image upload are
+                  submitted, we’ll send you a unique 20%
+                  discount code. Your code will be valid for
+                  30 days from the date it is issued.
+                </div>
+              </div>
+
+              <h3
+                style="
+                  margin:20px 0 8px;
+                  font-size:17px;
+                "
+              >
+                Your images, your choice
+              </h3>
+
+              <p>
+             Please confirm that the images are yours and
+                choose your image-use preference in the upload
+                form. Wider marketing use should only occur
+                with the permission you select.
+              </p>
+
+              <p
+                style="
+                  font-weight:700;
+                  margin-top:26px;
+                "
+              >
+                With gratitude,<br />
+                Samantha &amp; the Lushka team
+              </p>
+
+              <div
+                style="
+                  background:#2b140d;
+                  color:#ffffff;
+                  text-align:center;
+                  padding:18px;
+                  margin-top:30px;
+                  font-size:11px;
+                  line-height:1.7;
+                "
+              >
+                Lushka Cosmetics Ltd · 68 Nantwich Drive · Edinburgh EH7 6RB
+                <br />
+                www.lushkacosmetics.net · @lushka_cosmetics
+              </div>
+
+              ${unsubscribeHtml(
+                input.unsubscribeUrl,
+              )}
+            </div>
           `,
         }),
       };
@@ -421,51 +1011,234 @@ function getReviewEmailContent(
           "Four weeks with Lushka—show us your journey",
         html: emailShell({
           preheader:
-            "Share your Lushka journey in images to receive 20% off, valid for 30 days.",
+            "Your review is already in—share your four-week progress photos and receive 20% off.",
+          showBrandHeader: false,
+          showSignature: false,
           body: `
-            <h2 style="margin:0 0 20px;">
-              Show us your ur-week journey
-            </h2>
+            <div
+              style="
+                background:#2b140d;
+                color:#ffffff;
+            text-align:center;
+                padding:36px 26px 32px;
+                border-radius:14px 14px 0 0;
+              "
+            >
+              <div
+                style="
+                  font-size:13px;
+                  letter-spacing:2px;
+                  text-transform:uppercase;
+                  color:#d7ba78;
+                  margin-bottom:14px;
+                "
+              >
+                LUSHKA
+              </div>
 
-            <p>Hi ${name},</p>
+              <h2
+                style="
+                  margin:0;
+                  font-size:30px;
+                  line-height:1.2;
+                  color:#ffffff;
+                "
+              >
+                Four weeks with Lushka—<br />
+                show us your journey
+              </h2>
 
-            <p>
-              Thank you for already sharing your
-              Lushka review with us.
-            </p>
+              <div
+                style="
+                  margin-top:14px;
+                  font-size:11px;
+                  letter-spacing:1px;
+                  text-transform:uppercase;
+                  color:#d7ba78;
+                "
+              >
+                Your review is in · now show us your progress
+              </div>
+            </div>
 
-            <p>
-              At this stage, we only need your progress
-              images — there is no need to submit the
-              same review again.
-            </p>
+            <div style="padding-top:30px;">
+              <p
+                style="
+                  font-size:18px;
+                  font-weight:700;
+                  margin:0 0 10px;
+                "
+              >
+                Hi ${name},
+              </p>
 
-            <p>
-              Once your eligible photo submission is
-              complete, we will send you a unique 20%
-              thank-you code valid for 30 days.
-            </p>
+              <p style="line-height:1.7;">
+                Thank you for already sharing your Lushka review with us.
+                There’s no need to submit another review.
+              </p>
 
-            <p>
-              <strong>Order:</strong> ${orderName}
-            </p>
+              <p style="line-height:1.7;">
+           Now that you’ve reached four weeks, we’d love to see
+                how your Lushka journey is progressing.
+              </p>
 
-            ${products}
+              <div
+                style="
+                  background:#f3eadc;
+                  padding:20px;
+                  border-radius:12px;
+                  margin:26px 0;
+                "
+              >
+                <div
+                  style="
+                    font-size:12px;
+                    font-weight:700;
+                    letter-spacing:.9px;
+                    text-transform:uppercase;
+                    color:#9a7735;
+                    margin-bottom:9px;
+                  "
+                >
+                  Your next step
+                </div>
 
-            ${buttonHtml({
-              href: uploadUrl,
-              label: "Upload your photos",
-            })}
+                <div style="line-height:1.65;">
+                  Upload clear, honest progress images showing your
+                  scalp, hair, brows or product ritual after four weeks
+                  with Lushka.
+                </div>
+              </div>
 
-            <p>
-              Please use clear natural light, avoid
-              beauty filters, and only upload images
-              that you own and have permission to share.
-            </p>
+              <h2
+            style="
+                  margin:28px 0 10px;
+                  font-size:22px;
+                "
+              >
+                Share your progress photos
+              </h2>
 
-            ${unsubscribeHtml(
-            input.unsubscribeUrl,
-            )}
+              <p style="line-height:1.7;">
+                Your images help us understand your experience and
+                help future customers see authentic Lushka journeys.
+              </p>
+
+              <div
+                style="
+                  background:#faf7f2;
+                  border-radius:10px;
+                  padding:15px;
+                  text-align:center;
+                  margin:22px 0;
+                  font-size:11px;
+                  font-weight:700;
+                  letter-spacing:.7px;
+                  line-height:1.8;
+                  text-transform:uppercase;
+                "
+              >
+                Clear light &nbsp;·&nbsp;
+                No filters &nbsp;·&nbsp;
+                Same angle where possible &nbsp;·&nbsp;
+                Your own images
+              </div>
+
+           <div
+                style="
+                  margin:24px 0;
+                  padding:18px;
+                  border:1px solid #eadfce;
+                  border-radius:10px;
+                "
+              >
+                <div style="margin-bottom:8px;">
+                  <strong>Order:</strong> ${orderName}
+                </div>
+
+                ${products}
+              </div>
+
+              ${buttonHtml({
+                href: uploadUrl,
+                label: "Upload your photos",
+              })}
+
+              <div
+                style="
+                  background:#ead6a3;
+                  padding:20px;
+                  border-radius:12px;
+                  margin:28px 0 24px;
+                "
+              >
+                <div
+                  style="
+                    font-size:13px;
+                    font-weight:700;
+                    letter-spacing:.5px;
+                    text-transform:uppercase;
+                    margin-bottom:9px;
+                  "
+                >
+                  Your thank-you: 20% off · valid for 30 days
+                </div>
+
+                <div style="line-height:1.65;">
+                  Once your eligible photo submission is complete,
+                  we’ll send you a unique 20% discount code.
+                  Your code will be valid for 30 days from the
+                  date it is issued.
+                </div>
+              </div>
+
+              <h3
+                style="
+                  margin:24px 0 8px;
+                  font-size:18px;
+                "
+              >
+                Your images, your choice
+              </h3>
+
+              <p style="line-height:1.7;">
+                Please confirm that the images are yours and choose
+                your image-use preference in the upload form.
+                Wider marketing use will only occur with the
+                permission you select.
+              </p>
+
+              <p
+                style="
+                  font-weight:700;
+                  margin-to8px;
+                  line-height:1.6;
+                "
+              >
+                With gratitude,<br />
+                Samantha &amp; the Lushka team
+              </p>
+
+              <div
+                style="
+                  background:#2b140d;
+                  color:#ffffff;
+                  text-align:center;
+                  padding:18px;
+                  margin-top:30px;
+                  font-size:11px;
+                  line-height:1.7;
+                "
+              >
+                Lushka Cosmetics Ltd · 68 Nantwich Drive · Edinburgh EH7 6RB
+                <br />
+                www.lushkacosmetics.net · @lushka_cosmetics
+              </div>
+
+              ${unsubscribeHtml(
+                input.unsubscribeUrl,
+              )}
+            </div>
           `,
         }),
       };

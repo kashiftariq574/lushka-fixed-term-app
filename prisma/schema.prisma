@@ -52,6 +52,14 @@ model ShopConfig {
   serumSellingPlanGroupId String?
   serumSellingPlanId      String?
 
+  rootRevivalParentProductId String?
+  rootRevivalParentVariantId String?
+
+  rootRevivalSellingPlanGroupId String?
+  rootRevival4WeekSellingPlanId String?
+  rootRevival6WeekSellingPlanId String?
+  rootRevival8WeekSellingPlanId String?
+
   shippingMode String @default("SHOPIFY_CHECKOUT")
 
   createdAt DateTime @default(now())

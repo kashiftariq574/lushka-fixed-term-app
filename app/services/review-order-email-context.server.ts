@@ -119,6 +119,39 @@ export function reviewOrderEmailProductLabels(
   return result;
 }
 
+export type ReviewEmailProductImage = {
+  url: string;
+  altText: string;
+};
+
+export function reviewOrderEmailProductImages(
+  order: ReviewOrder,
+): ReviewEmailProductImage[] {
+  const result: ReviewEmailProductImage[] = [];
+  const seen = new Set<string>();
+
+  for (const lineItem of order.lineItems) {
+    const url = clean(lineItem.image?.url);
+
+    if (!url || seen.has(url)) {
+      continue;
+    }
+
+    seen.add(url);
+
+    result.push({
+      url,
+      altText:
+        clean(lineItem.image?.altText) ||
+        clean(lineItem.product?.title) ||
+        clean(lineItem.name) ||
+        "Lushka product",
+    });
+  }
+
+  return result.slice(0, 5);
+}
+
 export function reviewStorefrontUrl(
   shop: string,
 ): string {

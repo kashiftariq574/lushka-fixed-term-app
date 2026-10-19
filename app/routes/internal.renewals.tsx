@@ -1,6 +1,7 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { processDueRenewals } from "../services/renewals.server";
 import { processExpiredPaymentHolds } from "../services/payment-holds.server";
+import { processDueLifecycleEmails } from "../services/lifecycle-email-events.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const expectedSecret = process.env.CRON_SECRET;
@@ -26,11 +27,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const paymentHolds =
       await processExpiredPaymentHolds();
 
-    const result = await processDueRenewals();
+    const lifecycleEmails =
+      await processDueLifecycleEmails();
+
+    const result =
+      await processDueRenewals();
 
     return Response.json({
       ok: true,
       paymentHolds,
+      lifecycleEmails,
       ...result,
     });
   } catch (error) {

@@ -17,7 +17,11 @@ import {
   findReviewFormDefinition,
   reviewFormFieldValue,
 } from "../services/review-form-submission.server";
-import { buildDay14ReviewSubmissionFromOrder } from "../services/review-order-submission.server";
+import {
+  buildDay14ReviewSubmissionFromOrder,
+  buildDay28PhotosOnlySubmissionFromOrder,
+  buildDay28ReviewPhotosSubmissionFromOrder,
+} from "../services/review-order-submission.server";
 
 function makeOrder(
   overrides: Partial<ReviewOrder> = {},
@@ -32,6 +36,15 @@ function makeOrder(
       orderNumber: null,
       product: null,
       review: null,
+    },
+    day28ReviewBridge: {
+      handle: null,
+      email: null,
+      orderNumber: null,
+      product: null,
+      review: null,
+      photo1: null,
+      ownershipConsent: null,
     },
     cancelledAt: null,
     displayFinancialStatus: "PAID",
@@ -818,6 +831,15 @@ describe("day-14 order metafield review bridge", () => {
               review:
                 "Really enjoying the product.",
             },
+            day28ReviewBridge: {
+              handle: null,
+              email: null,
+              orderNumber: null,
+              product: null,
+              review: null,
+              photo1: null,
+              ownershipConsent: null,
+            },
             cancelledAt: null,
             displayFinancialStatus:
               "PAID",
@@ -875,6 +897,15 @@ describe("day-14 order metafield review bridge", () => {
                 "Multi-Peptide Hair Growth Serum",
               review: "Review text",
             },
+            day28ReviewBridge: {
+              handle: null,
+              email: null,
+              orderNumber: null,
+              product: null,
+              review: null,
+              photo1: null,
+              ownershipConsent: null,
+            },
             cancelledAt: null,
             displayFinancialStatus:
               "PAID",
@@ -894,3 +925,133 @@ describe("day-14 order metafield review bridge", () => {
   );
 });
 
+
+
+describe("day-28 order metafield review bridge", () => {
+  it(
+    "builds and validates a Day-28 review + photos submission",
+    () => {
+      const order = makeOrder({
+        day28ReviewBridge: {
+          handle: "form-r28",
+          email: "customer@example.com",
+          orderNumber: "1001",
+          product:
+            "Multi-Peptide Hair Growth Serum",
+          review:
+            "Four-week review text.",
+          photo1:
+            "gid://shopify/GenericFile/123",
+          ownershipConsent: "true",
+        },
+      });
+
+      const submission =
+        buildDay28ReviewPhotosSubmissionFromOrder({
+          order,
+          expectedHandle: "form-r28",
+        });
+
+      expect(
+        reviewFormFieldValue(
+          submission,
+          ["Review"],
+        ),
+      ).toBe(
+        "Four-week review text.",
+      );
+
+      expect(
+        reviewFormFieldValue(
+          submission,
+          ["Photo 1"],
+        ),
+      ).toBe(
+        "gid://shopify/GenericFile/123",
+      );
+
+      expect(
+        validateReviewFormContent({
+          signalType:
+            "DAY_28_REVIEW_PHOTOS_REWARD",
+          submission,
+        }),
+      ).toEqual({
+        valid: true,
+      });
+    },
+  );
+
+  it(
+    "builds and validates a Day-28 photos-only submission",
+    () => {
+      const order = makeOrder({
+        day28ReviewBridge: {
+          handle: "form-p28",
+          email: "customer@example.com",
+          orderNumber: "1001",
+          product:
+            "Multi-Peptide Hair Growth Serum",
+          review: null,
+          photo1:
+            "gid://shopify/GenericFile/456",
+          ownershipConsent: "accepted",
+        },
+      });
+
+      const submission =
+        buildDay28PhotosOnlySubmissionFromOrder({
+          order,
+          expectedHandle: "form-p28",
+        });
+
+      expect(
+        reviewFormFieldValue(
+          submission,
+          ["Photo 1"],
+        ),
+      ).toBe(
+        "gid://shopify/GenericFile/456",
+      );
+
+      expect(
+        validateReviewFormContent({
+          signalType:
+            "DAY_28_PHOTOS_ONLY_REWARD",
+          submission,
+        }),
+      ).toEqual({
+        valid: true,
+      });
+    },
+  );
+
+  it(
+    "rejects a stale Day-28 bridge handle",
+    () => {
+      const order = makeOrder({
+        day28ReviewBridge: {
+          handle: "old-day28-form",
+          email: "customer@example.com",
+          orderNumber: "1001",
+          product:
+            "Multi-Peptide Hair Growth Serum",
+          review: null,
+          photo1:
+            "gid://shopify/GenericFile/789",
+          ownershipConsent: "true",
+        },
+      });
+
+      expect(() =>
+        buildDay28PhotosOnlySubmissionFromOrder({
+          order,
+          expectedHandle:
+            "new-day28-form",
+        }),
+      ).toThrow(
+        "does not match the READY signal",
+      );
+    },
+  );
+});

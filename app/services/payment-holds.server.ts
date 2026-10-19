@@ -2,11 +2,13 @@ import db from "../db.server";
 import { unauthenticated } from "../shopify.server";
 import {
   COMPLETE,
+  ROOT_REVIVAL,
   SERUM,
 } from "../domain/subscription-policy";
 import {
   releaseCompleteRemainingInventory,
 } from "./program-inventory-release.server";
+import { releaseSerumRemainingInventory } from "./serum-inventory-reservation.server";
 
 function completeVariantIds(config: {
   serumVariantId?: string | null;
@@ -26,6 +28,26 @@ function completeVariantIds(config: {
   if (variantIds.some((id) => !id)) {
     throw new Error(
       "Complete programme inventory configuration is incomplete",
+    );
+  }
+
+  return variantIds as string[];
+}
+
+function rootRevivalVariantIds(config: {
+  serumVariantId?: string | null;
+  shampooVariantId?: string | null;
+  conditionerVariantId?: string | null;
+}): string[] {
+  const variantIds = [
+    config.serumVariantId,
+    config.shampooVariantId,
+    config.conditionerVariantId,
+  ];
+
+  if (variantIds.some((id) => !id)) {
+    throw new Error(
+      "Root Revival programme inventory configuration is incomplete",
     );
   }
 
@@ -77,7 +99,54 @@ export async function processExpiredPaymentHolds(
           variantIds,
           reason: "payment-hold-expiry",
         });
-      } else if (contract.planType !== SERUM.code) {
+      } else if (contract.planType === ROOT_REVIVAL.code) {
+        const config = await db.shopConfig.findUnique({
+          where: {
+            shop: contract.shop,
+          },
+        });
+
+        if (!config) {
+          throw new Error(
+            "Root Revival programme inventory configuration is incomplete",
+          );
+        }
+
+        const variantIds =
+          rootRevivalVariantIds(config);
+
+        const { admin } =
+          await unauthenticated.admin(contract.shop);
+
+        await releaseCompleteRemainingInventory({
+          graphql: admin.graphql,
+          contractId: contract.contractId,
+          variantIds,
+          reason: "payment-hold-expiry",
+        });
+      } else if (contract.planType === SERUM.code) {
+        const config = await db.shopConfig.findUnique({
+          where: {
+            shop: contract.shop,
+          },
+        });
+
+        if (!config?.serumVariantId) {
+          throw new Error(
+            "Serum inventory configuration is incomplete",
+          );
+        }
+
+        const { admin } =
+          await unauthenticated.admin(contract.shop);
+
+        await releaseSerumRemainingInventory({
+          graphql: admin.graphql,
+          contractId: contract.contractId,
+          serumVariantId: config.serumVariantId,
+          reason: "payment-hold-expiry",
+        });
+      } else {
         throw new Error(
           `Unsupported subscription plan type: ${contract.planType}`,
         );

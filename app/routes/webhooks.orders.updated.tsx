@@ -2,13 +2,13 @@ import type { ActionFunctionArgs } from "react-router";
 
 import { authenticate } from "../shopify.server";
 import { getReviewOrder } from "../services/review-order.server";
-import { buildDay14ReviewSubmissionFromOrder } from "../services/review-order-submission.server";
-import { validateReviewEmailEligibility } from "../services/review-email-eligibility.server";
 import {
-  findReviewFormDefinition,
-  getReviewFormSubmission,
-  reviewFormFieldValue,
-} from "../services/review-form-submission.server";
+  buildDay14ReviewSubmissionFromOrder,
+  buildDay28PhotosOnlySubmissionFromOrder,
+  buildDay28ReviewPhotosSubmissionFromOrder,
+} from "../services/review-order-submission.server";
+import { validateReviewEmailEligibility } from "../services/review-email-eligibility.server";
+import { reviewFormFieldValue } from "../services/review-form-submission.server";
 import { validateReviewSubmissionAgainstOrder } from "../services/review-submission-validation.server";
 import { validateReviewFormContent } from "../services/review-form-content-validation.server";
 import {
@@ -23,6 +23,7 @@ import {
 } from "../services/review-signal-idempotency.server";
 import { createOrGetReviewRewardDiscount } from "../services/review-discount.server";
 import {
+  reviewOrderEmailProductImages,
   reviewOrderEmailProductLabels,
   reviewStorefrontUrl,
 } from "../services/review-order-email-context.server";
@@ -79,7 +80,7 @@ const DAY_28_PHOTOS_ONLY_REQUEST =
   "lushka-app-28-photos-only-request-ready";
 
 const DAY_28_REVIEW_PHOTOS_REQUEST =
-  "lushka-app-28-review-photos-request-ready";
+  "lushka-app-28-review-photos-ready";
 
 const DAY_14_REVIEW_REWARD_PREFIX =
   "r14-";
@@ -548,29 +549,34 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               expectedHandle:
                 signal.metaobjectHandle,
             });
-
-          submissionSourceType =
-            submission.type;
-        } else {
-          const definition =
-            await findReviewFormDefinition({
-              graphql: admin.graphql,
-              name: reviewFormName,
-              handle:
-                signal.metaobjectHandle,
-            });
-
+        } else if (
+          signal.type ===
+          "DAY_28_REVIEW_PHOTOS_REWARD"
+        ) {
           submission =
-            await getReviewFormSubmission({
-              graphql: admin.graphql,
-              type: definition.type,
-              handle:
+            buildDay28ReviewPhotosSubmissionFromOrder({
+              order,
+              expectedHandle:
                 signal.metaobjectHandle,
             });
-
-          submissionSourceType =
-            definition.type;
+        } else if (
+          signal.type ===
+          "DAY_28_PHOTOS_ONLY_REWARD"
+        ) {
+          submission =
+            buildDay28PhotosOnlySubmissionFromOrder({
+              order,
+              expectedHandle:
+                signal.metaobjectHandle,
+            });
+        } else {
+          throw new Error(
+            "Unsupported review reward signal",
+          );
         }
+
+        submissionSourceType =
+          submission.type;
 
         const submittedEmail =
           reviewFormFieldValue(submission, [
@@ -933,6 +939,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             order,
           );
 
+        const productImages =
+          reviewOrderEmailProductImages(
+            order,
+          );
+
         const emailResult =
           await sendReviewEmail({
             to:
@@ -946,6 +957,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             orderName:
               order.name,
             productLabels,
+            productImages,
             storefrontUrl:
               reviewStorefrontUrl(shop),
             unsubscribeUrl:

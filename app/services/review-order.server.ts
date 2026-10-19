@@ -43,6 +43,16 @@ export type ReviewOrder = {
     review: string | null;
   };
 
+  day28ReviewBridge: {
+    handle: string | null;
+    email: string | null;
+    orderNumber: string | null;
+    product: string | null;
+    review: string | null;
+    photo1: string | null;
+    ownershipConsent: string | null;
+  };
+
   cancelledAt?: string | null;
   displayFinancialStatus?: string | null;
   displayFulfillmentStatus: string;
@@ -85,6 +95,28 @@ type OrderQueryResponse = {
         value?: string | null;
       } | null;
       day14Review?: {
+        value?: string | null;
+      } | null;
+
+      day28Handle?: {
+        value?: string | null;
+      } | null;
+      day28Email?: {
+        value?: string | null;
+      } | null;
+      day28OrderNumber?: {
+        value?: string | null;
+      } | null;
+      day28Product?: {
+        value?: string | null;
+      } | null;
+      day28Review?: {
+        value?: string | null;
+      } | null;
+      day28Photo1?: {
+        value?: string | null;
+      } | null;
+      day28OwnershipConsent?: {
         value?: string | null;
       } | null;
 
@@ -156,6 +188,55 @@ const REVIEW_ORDER_QUERY = `#graphql
       day14Review: metafield(
         namespace: "lushka_review"
         key: "day14_review"
+      ) {
+        value
+      }
+
+      day28Handle: metafield(
+        namespace: "lushka_review"
+        key: "day28_handle"
+      ) {
+        value
+      }
+
+      day28Email: metafield(
+        namespace: "lushka_review"
+        key: "day28_email"
+      ) {
+        value
+      }
+
+      day28OrderNumber: metafield(
+        namespace: "lushka_review"
+        key: "day28_order_number"
+      ) {
+        value
+      }
+
+      day28Product: metafield(
+        namespace: "lushka_review"
+        key: "day28_product"
+      ) {
+        value
+      }
+
+      day28Review: metafield(
+        namespace: "lushka_review"
+        key: "day28_review"
+      ) {
+        value
+      }
+
+      day28Photo1: metafield(
+        namespace: "lushka_review"
+        key: "day28_photo1"
+      ) {
+        value
+      }
+
+      day28OwnershipConsent: metafield(
+        namespace: "lushka_review"
+        key: "day28_ownership_consent"
       ) {
         value
       }
@@ -269,6 +350,30 @@ export async function getReviewOrder({
         null,
       review:
         order.day14Review?.value?.trim() ||
+        null,
+    },
+
+    day28ReviewBridge: {
+      handle:
+        order.day28Handle?.value?.trim() ||
+        null,
+      email:
+        order.day28Email?.value?.trim() ||
+        null,
+      orderNumber:
+        order.day28OrderNumber?.value?.trim() ||
+        null,
+      product:
+        order.day28Product?.value?.trim() ||
+        null,
+      review:
+        order.day28Review?.value?.trim() ||
+        null,
+      photo1:
+        order.day28Photo1?.value?.trim() ||
+        null,
+      ownershipConsent:
+        order.day28OwnershipConsent?.value?.trim() ||
         null,
     },
 

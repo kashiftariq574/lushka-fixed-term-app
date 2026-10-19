@@ -1,15 +1,35 @@
 import prisma from "../db.server";
 import { unauthenticated } from "../shopify.server";
-import { createBillingAttempt } from "./billing.server";
+import {
+  createBillingAttempt,
+  isBillingAttemptDefinitiveError,
+  isBillingAttemptUncertainError,
+} from "./billing.server";
 import {
   deterministicBillingKey,
   retryBillingKey,
+  SERUM,
 } from "../domain/subscription-policy";
 
 import {
   hasReachedMaxAttempts,
   isRetryReady,
 } from "../domain/renewal-retry-policy";
+import {
+  prepareSerumReservedInventoryForBilling,
+  restoreSerumReservedInventoryAfterFailedBilling,
+} from "./serum-inventory-reservation.server";
+
+const OPEN_BILLING_STATUSES = [
+  "PENDING",
+  "SUBMITTED",
+  "CHALLENGED",
+] as const;
+
+const SERUM_RESUME_STATUSES = [
+  "PREPARING",
+  "INVENTORY_RELEASED",
+] as const;
 
 export async function processDueRenewals(now = new Date()) {
   const dueContracts = await prisma.contractState.findMany({
@@ -69,7 +89,9 @@ export async function processDueRenewals(now = new Date()) {
 
     if (
       latestAttempt &&
-      ["PENDING", "SUBMITTED", "CHALLENGED"].includes(latestAttempt.status)
+      OPEN_BILLING_STATUSES.includes(
+        latestAttempt.status as (typeof OPEN_BILLING_STATUSES)[number],
+      )
     ) {
       results.push({
         contractId: contractState.contractId,
@@ -123,57 +145,127 @@ export async function processDueRenewals(now = new Date()) {
       }
     }
 
-    const attemptNumber = attempts.length + 1;
+    const isSerum = contractState.planType === SERUM.code;
 
-    const idempotencyKey =
-      attemptNumber === 1
-        ? deterministicBillingKey(contractState.contractId, cycleIndex)
-        : retryBillingKey(
-            contractState.contractId,
+    let attemptRecord =
+      latestAttempt &&
+      isSerum &&
+      SERUM_RESUME_STATUSES.includes(
+        latestAttempt.status as (typeof SERUM_RESUME_STATUSES)[number],
+      )
+        ? latestAttempt
+        : null;
+
+    if (!attemptRecord) {
+      const attemptNumber = attempts.length + 1;
+
+      const idempotencyKey =
+        attemptNumber === 1
+          ? deterministicBillingKey(
+              contractState.contractId,
+              cycleIndex,
+            )
+          : retryBillingKey(
+              contractState.contractId,
+              cycleIndex,
+              attemptNumber - 1,
+            );
+
+      try {
+        attemptRecord = await prisma.billingAttempt.create({
+          data: {
+            contractStateId: contractState.id,
+            contractId: contractState.contractId,
             cycleIndex,
-            attemptNumber - 1,
-          );
-
-    let attemptRecord;
-
-    try {
-      attemptRecord = await prisma.billingAttempt.create({
-        data: {
-          contractStateId: contractState.id,
-          contractId: contractState.contractId,
-          cycleIndex,
-          idempotencyKey,
-          status: "PENDING",
-          attemptCount: attemptNumber,
-        },
-      });
-    } catch (error) {
-      const prismaCode =
-        typeof error === "object" && error !== null && "code" in error
-          ? String((error as { code?: unknown }).code)
-          : null;
-
-      if (prismaCode === "P2002") {
-        results.push({
-          contractId: contractState.contractId,
-          cycleIndex,
-          skipped: true,
-          reason: "Concurrent billing attempt already created",
+            idempotencyKey,
+            status: isSerum ? "PREPARING" : "PENDING",
+            attemptCount: attemptNumber,
+          },
         });
-        continue;
-      }
+      } catch (error) {
+        const prismaCode =
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error
+            ? String((error as { code?: unknown }).code)
+            : null;
 
-      throw error;
+        if (prismaCode === "P2002") {
+          results.push({
+            contractId: contractState.contractId,
+            cycleIndex,
+            skipped: true,
+            reason: "Concurrent billing attempt already created",
+          });
+          continue;
+        }
+
+        throw error;
+      }
     }
 
+    let inventoryReleasedForSerum =
+      attemptRecord.status === "INVENTORY_RELEASED";
+
     try {
-      const { admin } = await unauthenticated.admin(contractState.shop);
+      const { admin } = await unauthenticated.admin(
+        contractState.shop,
+      );
+
+      if (isSerum && attemptRecord.status === "PREPARING") {
+        const config = await prisma.shopConfig.findUnique({
+          where: {
+            shop: contractState.shop,
+          },
+        });
+
+        if (!config?.serumVariantId) {
+          throw new Error(
+            "Serum inventory configuration is incomplete",
+          );
+        }
+
+        await prepareSerumReservedInventoryForBilling({
+          graphql: admin.graphql,
+          contractId: contractState.contractId,
+          serumVariantId: config.serumVariantId,
+          cycleIndex,
+        });
+
+        const releasedUpdate =
+          await prisma.billingAttempt.updateMany({
+            where: {
+              id: attemptRecord.id,
+              status: "PREPARING",
+            },
+            data: {
+              status: "INVENTORY_RELEASED",
+            },
+          });
+
+        if (releasedUpdate.count === 0) {
+          results.push({
+            contractId: contractState.contractId,
+            cycleIndex,
+            skipped: true,
+            reason:
+              "Serum billing attempt left PREPARING concurrently",
+          });
+          continue;
+        }
+
+        inventoryReleasedForSerum = true;
+        attemptRecord = {
+          ...attemptRecord,
+          status: "INVENTORY_RELEASED",
+        };
+      }
 
       const { attempt } = await createBillingAttempt(
         admin.graphql,
         contractState.contractId,
         cycleIndex,
-        idempotencyKey,
+        attemptRecord.idempotencyKey,
       );
 
       await prisma.billingAttempt.updateMany({
@@ -200,7 +292,86 @@ export async function processDueRenewals(now = new Date()) {
       });
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Unknown billing error";
+        error instanceof Error
+          ? error.message
+          : "Unknown billing error";
+
+      const definitive = isBillingAttemptDefinitiveError(error);
+      const uncertain =
+        isBillingAttemptUncertainError(error) ||
+        (isSerum &&
+          inventoryReleasedForSerum &&
+          !definitive);
+
+      if (isSerum && inventoryReleasedForSerum && uncertain) {
+        /*
+         * Mutation may already have been accepted by Shopify.
+         * Keep the released Serum unit and the same BillingAttempt
+         * so the worker can resume with the identical idempotency key.
+         */
+        await prisma.billingAttempt.updateMany({
+          where: {
+            id: attemptRecord.id,
+            status: {
+              in: ["INVENTORY_RELEASED", "PREPARING"],
+            },
+          },
+          data: {
+            status: "INVENTORY_RELEASED",
+            error: message,
+          },
+        });
+
+        results.push({
+          contractId: contractState.contractId,
+          cycleIndex,
+          submitted: false,
+          uncertain: true,
+          error: message,
+        });
+        continue;
+      }
+
+      if (isSerum && inventoryReleasedForSerum && definitive) {
+        try {
+          const config = await prisma.shopConfig.findUnique({
+            where: {
+              shop: contractState.shop,
+            },
+          });
+
+          if (!config?.serumVariantId) {
+            throw new Error(
+              "Serum inventory configuration is incomplete",
+            );
+          }
+
+          const { admin } = await unauthenticated.admin(
+            contractState.shop,
+          );
+
+          await restoreSerumReservedInventoryAfterFailedBilling({
+            graphql: admin.graphql,
+            contractId: contractState.contractId,
+            serumVariantId: config.serumVariantId,
+            cycleIndex,
+          });
+        } catch (restoreError) {
+          console.error(
+            `Failed to restore Serum reservation after billing error for ${contractState.contractId}`,
+            restoreError,
+          );
+
+          await prisma.inventoryReservation.updateMany({
+            where: {
+              contractId: contractState.contractId,
+            },
+            data: {
+              status: "RECOVERY_REQUIRED",
+            },
+          });
+        }
+      }
 
       const failureUpdate = await prisma.billingAttempt.updateMany({
         where: {
